@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>닥터배 수료증 발급 시스템</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ───────────── 공통 토큰 ───────────── */
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --ink:#1a1d21; --muted:#6b7280;
+  --line:#e3e6ea; --line2:#cfd4da; --accent:#1f6feb; --accent-soft:#e8f0fe;
+  --ok:#0f8f52; --ok-soft:#e6f5ed; --warn:#b45309; --warn-soft:#fdf3e3;
+  --danger:#c0322b; --radius:10px;
+  --ui: "Noto Sans KR","맑은 고딕","Malgun Gothic",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--ui);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
+
+/* ───────────── 헤더 / 탭 ───────────── */
+.topbar{background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50}
+.topbar-in{max-width:1440px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:28px;height:58px}
+.brand{display:flex;align-items:baseline;gap:10px;font-weight:700;font-size:16px;white-space:nowrap}
+.brand small{font-weight:400;color:var(--muted);font-size:12px}
+.tabs{display:flex;gap:4px;margin-left:auto}
+.tab{background:none;border:0;padding:9px 18px;border-radius:8px;cursor:pointer;color:var(--muted);font-weight:500}
+.tab:hover{background:#f0f2f5}
+.tab.on{background:var(--accent-soft);color:var(--accent);font-weight:700}
+.tab .cnt{display:inline-block;margin-left:6px;background:#fff;border:1px solid var(--line2);border-radius:99px;padding:0 7px;font-size:11px;color:var(--muted)}
+
+.wrap{max-width:1440px;margin:0 auto;padding:20px}
+.view{display:none}
+.view.on{display:block}
+
+/* ───────────── 패널 / 폼 ───────────── */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius)}
+.panel h2{margin:0;padding:14px 18px;border-bottom:1px solid var(--line);font-size:14px;font-weight:700}
+.panel .body{padding:18px}
+.issue-grid{display:grid;grid-template-columns:390px minmax(0,1fr);gap:20px;align-items:start}
+@media(max-width:1080px){.issue-grid{grid-template-columns:1fr}}
+
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:5px}
+.field .hint{font-size:11px;color:var(--muted);font-weight:400;margin-top:4px}
+input[type=text],input[type=date],select,textarea{
+  width:100%;padding:9px 11px;border:1px solid var(--line2);border-radius:7px;background:#fff;outline:none}
+input[type=text]:focus,input[type=date]:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.row{display:flex;gap:10px}
+.row>*{flex:1;min-width:0}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;user-select:none}
+.chk input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+
+details.adv{border-top:1px dashed var(--line2);margin-top:16px;padding-top:12px}
+details.adv summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);list-style:none}
+details.adv summary::-webkit-details-marker{display:none}
+details.adv summary::before{content:"▸ ";}
+details.adv[open] summary::before{content:"▾ ";}
+details.adv .inner{padding-top:14px}
+
+.btn{border:1px solid var(--line2);background:#fff;padding:10px 16px;border-radius:8px;cursor:pointer;font-weight:600}
+.btn:hover{background:#f6f7f9}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{border-style:dashed}
+.btn.sm{padding:6px 11px;font-size:12px;font-weight:500;border-radius:6px}
+.btn.danger{color:var(--danger);border-color:#eccac8}
+.btn.danger:hover{background:#fdf1f0}
+.actions{display:flex;gap:8px;margin-top:18px}
+.actions .btn{flex:1}
+
+/* ───────────── A4 미리보기 ───────────── */
+.preview-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.preview-head h2{border:0;padding:0;flex:1}
+.zoom{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.stage{padding:20px;background:#e9ebee;border-radius:0 0 var(--radius) var(--radius);overflow:auto}
+.stage-wrap{margin:0 auto;position:relative;overflow:hidden}
+.stage-in{position:absolute;top:0;left:0;width:297mm;transform-origin:top left}
+
+.sheet{
+  position:relative;width:297mm;height:210mm;background:#fff;overflow:hidden;
+  box-shadow:0 3px 18px rgba(0,0,0,.16);
+}
+.sheet .paper-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.85}
+.sheet .guides{position:absolute;inset:0;pointer-events:none}
+.sheet .guides i{position:absolute;border:1px dashed rgba(31,111,235,.45);background:rgba(31,111,235,.04);display:block}
+.sheet .fld{position:absolute;white-space:pre;line-height:1.2}
+
+/* 인쇄 텍스트 서체: 로컬 설치 폰트 우선(PPT와 동일), 없으면 웹폰트 대체 */
+.f-script{font-family:"Vladimir Script","Great Vibes","맑은 고딕","Malgun Gothic",cursive}
+.f-sans{font-family:"G마켓 산스 TTF Light","GmarketSansTTFLight","Noto Sans KR","맑은 고딕","Malgun Gothic",sans-serif;font-weight:300}
+
+/* ───────────── 명단 테이블 ───────────── */
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}
+.toolbar input[type=text]{width:220px}
+.toolbar input[type=date]{width:150px}
+.toolbar select{width:auto;min-width:120px}
+.spacer{flex:1}
+.stats{display:flex;gap:18px;padding:12px 18px;border-bottom:1px solid var(--line);background:#fafbfc;font-size:13px}
+.stats b{font-size:16px}
+.stats .s-issued b{color:var(--ok)}
+.stats .s-record b{color:var(--warn)}
+
+.tbl-scroll{max-height:calc(100vh - 320px);overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{position:sticky;top:0;background:#fafbfc;border-bottom:1px solid var(--line2);padding:9px 10px;text-align:left;font-size:12px;color:var(--muted);white-space:nowrap;z-index:2}
+tbody td{border-bottom:1px solid var(--line);padding:8px 10px;vertical-align:middle}
+tbody tr:hover{background:#f7f9fc}
+tbody tr.sel{background:var(--accent-soft)}
+td.c,th.c{text-align:center}
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:700}
+.badge.issued{background:var(--ok-soft);color:var(--ok)}
+.badge.record{background:var(--warn-soft);color:var(--warn)}
+.grp td{background:#eef1f5;font-weight:700;font-size:12px;color:#3d4753;padding:6px 10px}
+.empty{padding:60px 20px;text-align:center;color:var(--muted)}
+.rowbtns{display:flex;gap:5px;justify-content:flex-end;white-space:nowrap}
+.rowbtns .btn{white-space:nowrap;flex:0 0 auto}
+
+/* ───────────── 설정 ───────────── */
+.set-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px;align-items:start}
+.calib{display:grid;grid-template-columns:auto 1fr 74px;gap:10px 12px;align-items:center}
+.calib label{font-size:12px;color:var(--muted);white-space:nowrap}
+.calib input[type=range]{width:100%;accent-color:var(--accent)}
+.calib .num{width:74px;padding:5px 7px;text-align:right;border:1px solid var(--line2);border-radius:6px}
+
+/* ───────────── 모달 / 토스트 ───────────── */
+.modal-bg{position:fixed;inset:0;background:rgba(20,24,30,.5);display:none;align-items:center;justify-content:center;z-index:200;padding:20px}
+.modal-bg.on{display:flex}
+.modal{background:#fff;border-radius:12px;width:100%;max-width:480px;max-height:90vh;overflow:auto}
+.modal h3{margin:0;padding:16px 20px;border-bottom:1px solid var(--line);font-size:15px}
+.modal .body{padding:20px}
+.modal .foot{display:flex;gap:8px;padding:0 20px 20px}
+.modal .foot .btn{flex:1}
+#toast{position:fixed;left:50%;bottom:32px;transform:translateX(-50%) translateY(20px);background:#22262c;color:#fff;
+  padding:11px 20px;border-radius:8px;opacity:0;transition:.22s;pointer-events:none;z-index:300;font-size:13px}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ───────────── 인쇄 ───────────── */
+#printArea{display:none}
+@page{size:A4 landscape;margin:0}
+@media print{
+  html,body{background:#fff;margin:0;padding:0}
+  body>*{display:none !important}
+  #printArea{display:block !important}
+  #printArea .sheet{box-shadow:none;margin:0;break-after:page;page-break-after:always}
+  #printArea .sheet:last-child{break-after:auto;page-break-after:auto}
+  #printArea .paper-bg,#printArea .guides{display:none !important}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar"><div class="topbar-in">
+  <div class="brand">닥터배 수료증 <small>Certificate Issuer</small></div>
+  <nav class="tabs">
+    <button class="tab on" data-view="issue">발급하기</button>
+    <button class="tab" data-view="list">수료자 명단 <span class="cnt" id="tabCount">0</span></button>
+    <button class="tab" data-view="settings">설정</button>
+  </nav>
+</div></div>
+
+<div class="wrap">
+
+<!-- ══════════ 발급하기 ══════════ -->
+<section class="view on" id="v-issue">
+<div class="issue-grid">
+
+  <div class="panel">
+    <h2>수료 정보 입력</h2>
+    <div class="body">
+      <div class="field">
+        <label for="f-date">수료 일자</label>
+        <input type="date" id="f-date">
+      </div>
+      <div class="field">
+        <label for="f-shop">샵 이름 <span style="color:var(--accent)">(좌측 상단 · 28pt)</span></label>
+        <input type="text" id="f-shop" placeholder="예: 스파올린" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>원장 / 대표 이름 <span style="color:var(--accent)">(샵 이름 아래 · 11pt)</span></label>
+        <div class="row">
+          <select id="f-title" style="flex:0 0 108px">
+            <option>원장</option><option>대표</option><option>실장</option>
+            <option>원장님</option><option value="">(직함 없음)</option>
+          </select>
+          <select id="f-titlepos" style="flex:0 0 92px">
+            <option value="prefix">앞에</option>
+            <option value="suffix">뒤에</option>
+          </select>
+          <input type="text" id="f-name" placeholder="예: 주예린" autocomplete="off">
+        </div>
+        <div class="hint">출력 미리보기: <b id="f-personEcho">원장</b></div>
+      </div>
+      <div class="field">
+        <label for="f-signer">서명자 (우측 블록)</label>
+        <select id="f-signer">
+          <option value="drbae">Dr. Bae Won-Gyu / 의공학 박사: 배원규 교수</option>
+          <option value="baelab">Dr. Bae Won-Gyu / 주식회사 배랩 (대표: 배원규)</option>
+          <option value="custom">직접 입력…</option>
+        </select>
+      </div>
+      <div class="row" id="f-signerCustom" style="display:none;margin-bottom:14px">
+        <input type="text" id="f-signName" placeholder="우측 큰 글씨 (28pt)">
+        <input type="text" id="f-signTitle" placeholder="우측 작은 글씨 (11pt)">
+      </div>
+      <div class="field">
+        <label for="f-course">과정명 <span style="font-weight:400">(명단 기록용 · 인쇄 안 됨)</span></label>
+        <input type="text" id="f-course" placeholder="예: 미용기기 원리 심화과정" autocomplete="off">
+      </div>
+      <label class="chk" style="margin-bottom:10px">
+        <input type="checkbox" id="f-issued" checked>
+        <span>수료증 발급 <span style="color:var(--muted)">(해제 시 명단에만 기록)</span></span>
+      </label>
+      <div class="field">
+        <label for="f-note">비고</label>
+        <input type="text" id="f-note" placeholder="예: 온라인 교육 이수" autocomplete="off">
+      </div>
+
+      <details class="adv"><summary>이번 장만 특별 문구로 (예: 온라인 교육 및 상담 완료)</summary>
+        <div class="inner">
+          <div class="field">
+            <label for="f-override">우측 이름 자리를 대체할 문구</label>
+            <input type="text" id="f-override" placeholder="비워두면 서명자 블록 그대로 인쇄">
+            <div class="hint">입력하면 우측의 이름·직함 대신 이 문구만 24pt로 인쇄됩니다.</div>
+          </div>
+        </div>
+      </details>
+
+      <div class="actions">
+        <button class="btn primary" id="btnSavePrint">저장 후 인쇄</button>
+        <button class="btn" id="btnSaveOnly">명단에만 저장</button>
+      </div>
+      <div class="actions" style="margin-top:8px">
+        <button class="btn ghost" id="btnPrintOnly">저장 없이 인쇄</button>
+        <button class="btn ghost" id="btnReset">초기화</button>
+      </div>
+      <div id="editBar" style="display:none;margin-top:10px;padding:9px 12px;background:var(--warn-soft);border-radius:7px;font-size:12px;color:var(--warn)">
+        수정 모드 — 명단의 기존 기록을 편집 중입니다. <a href="#" id="cancelEdit" style="color:inherit">취소</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="preview-head">
+      <h2>A4 가로 미리보기</h2>
+      <label class="chk" style="font-size:12px"><input type="checkbox" id="showGuides" checked> 위치 가이드</label>
+      <div class="zoom">
+        <span>배율</span>
+        <input type="range" id="zoom" min="30" max="130" value="62" style="width:110px">
+        <span id="zoomVal" style="width:38px;text-align:right">62%</span>
+      </div>
+    </div>
+    <div class="stage">
+      <div class="stage-wrap" id="stageWrap">
+        <div class="stage-in" id="stageIn">
+          <div class="sheet" id="preview"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</section>
+
+<!-- ══════════ 수료자 명단 ══════════ -->
+<section class="view" id="v-list">
+<div class="panel">
+  <div class="toolbar">
+    <input type="text" id="q" placeholder="샵 이름 · 이름 · 과정 검색" autocomplete="off">
+    <input type="date" id="qFrom" title="시작일">
+    <span style="color:var(--muted)">~</span>
+    <input type="date" id="qTo" title="종료일">
+    <select id="qIssued">
+      <option value="all">전체</option>
+      <option value="1">수료증 발급</option>
+      <option value="0">기록만</option>
+    </select>
+    <select id="qGroup">
+      <option value="date">일자별 묶기</option>
+      <option value="none">묶지 않기</option>
+    </select>
+    <button class="btn sm" id="qClear">필터 해제</button>
+    <span class="spacer"></span>
+    <button class="btn sm" id="btnAddManual">+ 직접 추가</button>
+    <button class="btn sm" id="btnPrintSel">선택 인쇄 <span id="selCnt">0</span></button>
+    <button class="btn sm" id="btnCsv">CSV 내보내기</button>
+    <button class="btn sm" id="btnJson">백업(JSON)</button>
+    <button class="btn sm" id="btnImport">복원</button>
+  </div>
+  <div class="stats">
+    <span>전체 <b id="stAll">0</b>건</span>
+    <span class="s-issued">수료증 발급 <b id="stIssued">0</b>건</span>
+    <span class="s-record">기록만 <b id="stRecord">0</b>건</span>
+    <span style="color:var(--muted)">표시중 <b id="stShown">0</b>건</span>
+  </div>
+  <div class="tbl-scroll">
+    <table>
+      <thead><tr>
+        <th class="c" style="width:38px"><input type="checkbox" id="selAll" style="accent-color:var(--accent)"></th>
+        <th style="width:104px">수료 일자</th>
+        <th>샵 이름</th>
+        <th style="width:150px">원장 / 대표</th>
+        <th style="width:180px">과정명</th>
+        <th class="c" style="width:92px">구분</th>
+        <th style="width:170px">비고</th>
+        <th style="width:180px"></th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+</section>
+
+<!-- ══════════ 설정 ══════════ -->
+<section class="view" id="v-settings">
+<div class="set-grid">
+
+  <div class="panel">
+    <h2>인쇄 위치 미세 조정</h2>
+    <div class="body">
+      <p style="margin-top:0;color:var(--muted);font-size:12px">
+        실제 수료증 용지에 시험 인쇄한 뒤, 글자가 밀린 만큼 mm 단위로 보정하세요.
+        (+X = 오른쪽, +Y = 아래)
+      </p>
+      <div class="calib">
+        <label>전체 X</label><input type="range" id="c-ox" min="-15" max="15" step="0.5"><input class="num" id="n-ox" type="text">
+        <label>전체 Y</label><input type="range" id="c-oy" min="-15" max="15" step="0.5"><input class="num" id="n-oy" type="text">
+      </div>
+      <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
+      <div class="calib">
+        <label>샵 이름 크기</label><input type="range" id="c-shopSize" min="14" max="40" step="1"><input class="num" id="n-shopSize" type="text">
+        <label>이름줄 크기</label><input type="range" id="c-personSize" min="8" max="18" step="0.5"><input class="num" id="n-personSize" type="text">
+        <label>서명 크기</label><input type="range" id="c-signSize" min="14" max="40" step="1"><input class="num" id="n-signSize" type="text">
+        <label>날짜 크기</label><input type="range" id="c-dateSize" min="10" max="30" step="1"><input class="num" id="n-dateSize" type="text">
+      </div>
+      <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
+      <label class="chk" style="margin-bottom:10px"><input type="checkbox" id="c-underline"> 샵 이름·서명에 밑줄</label>
+      <div class="field" style="margin-bottom:0">
+        <label for="c-datefmt">날짜 표기 형식</label>
+        <select id="c-datefmt">
+          <option value="Date YYYY.MM.DD">Date 2026.08.13</option>
+          <option value="YYYY.MM.DD">2026.08.13</option>
+          <option value="YYYY년 MM월 DD일">2026년 08월 13일</option>
+        </select>
+      </div>
+      <div class="actions"><button class="btn" id="btnResetCalib">기본값으로 되돌리기</button></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>미리보기 배경</h2>
+    <div class="body">
+      <p style="margin-top:0;color:var(--muted);font-size:12px">
+        수료증 용지를 스캔·촬영해 올려두면 화면에서 위치를 눈으로 맞출 수 있습니다.
+        <b>인쇄에는 절대 포함되지 않습니다.</b>
+      </p>
+      <input type="file" id="bgFile" accept="image/*" style="margin-bottom:10px">
+      <div class="actions" style="margin-top:6px"><button class="btn" id="btnBgClear">배경 지우기</button></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>데이터</h2>
+    <div class="body">
+      <p style="margin-top:0;color:var(--muted);font-size:12px">
+        모든 기록은 이 브라우저에만 저장됩니다(localStorage). 다른 PC로 옮기거나
+        백업하려면 JSON으로 내보내고 복원하세요.
+      </p>
+      <div class="actions">
+        <button class="btn" id="btnJson2">백업 파일 내보내기</button>
+        <button class="btn" id="btnImport2">백업 파일 복원</button>
+      </div>
+      <div class="actions">
+        <button class="btn danger" id="btnWipe">전체 기록 삭제</button>
+      </div>
+      <div id="storeInfo" style="margin-top:14px;font-size:12px;color:var(--muted)"></div>
+    </div>
+  </div>
+
+</div>
+</section>
+
+</div>
+
+<!-- 직접 추가 / 수정 모달 -->
+<div class="modal-bg" id="modal"><div class="modal">
+  <h3 id="mTitle">명단에 직접 추가</h3>
+  <div class="body">
+    <div class="field"><label>수료 일자</label><input type="date" id="m-date"></div>
+    <div class="field"><label>샵 이름</label><input type="text" id="m-shop" autocomplete="off"></div>
+    <div class="field"><label>원장 / 대표</label>
+      <div class="row">
+        <select id="m-title" style="flex:0 0 108px">
+          <option>원장</option><option>대표</option><option>실장</option>
+          <option>원장님</option><option value="">(직함 없음)</option>
+        </select>
+        <select id="m-titlepos" style="flex:0 0 92px">
+          <option value="prefix">앞에</option><option value="suffix">뒤에</option>
+        </select>
+        <input type="text" id="m-name" autocomplete="off">
+      </div>
+    </div>
+    <div class="field"><label>과정명</label><input type="text" id="m-course" autocomplete="off"></div>
+    <div class="field"><label>비고</label><input type="text" id="m-note" autocomplete="off"></div>
+    <label class="chk"><input type="checkbox" id="m-issued"> <span>수료증 발급함 (해제하면 <b>기록만</b>)</span></label>
+  </div>
+  <div class="foot">
+    <button class="btn" id="mCancel">취소</button>
+    <button class="btn primary" id="mSave">저장</button>
+  </div>
+</div></div>
+
+<div id="toast"></div>
+<div id="printArea"></div>
+<input type="file" id="importFile" accept="application/json" style="display:none">
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════
+   원본 PPT(26년_수료증_인쇄용 파일.pptx)에서 추출한 고정 좌표
+   슬라이드 크기 10691813 x 7559675 EMU = 297.0 x 210.0 mm (A4 가로)
+   PowerPoint 텍스트 상자 내부 여백(lIns 2.54mm / tIns 1.27mm) 반영값
+   ═══════════════════════════════════════════════════════════ */
+const LAYOUT = {
+  shop:       { cx:83.83,  y:96.80,  size:28, align:'center' }, // 샵 이름
+  person:     { cx:83.83,  y:109.96, size:11, align:'center' }, // 원장 ○○○
+  signName:   { x:182.25,  y:96.70,  size:28, align:'left'   }, // Dr. Bae Won-Gyu
+  signTitle:  { x:190.88,  y:109.96, size:11, align:'left'   }, // 의공학 박사: …
+  date:       { x:187.07,  y:167.56, size:20, align:'left'   }, // Date 2026.08.13
+  override:   { x:175.83,  y:98.53,  size:24, align:'left'   }  // 특별 문구(온라인 교육 …)
+};
+const SIGNERS = {
+  drbae : { name:'Dr. Bae Won-Gyu', title:'의공학 박사: 배원규 교수' },
+  baelab: { name:'Dr. Bae Won-Gyu', title:'주식회사 배랩 (대표: 배원규)' }
+};
+const DEFAULTS = {
+  ox:0, oy:0, shopSize:28, personSize:11, signSize:28, dateSize:20,
+  underline:true, datefmt:'Date YYYY.MM.DD', bg:''
+};
+
+const K_REC='drbae_cert_records_v1', K_SET='drbae_cert_settings_v1', K_SEED='drbae_cert_seeded_v1';
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+
+/* ───────── 저장소 ───────── */
+function load(k,d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } }
+function save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){ toast('저장 공간이 부족합니다'); } }
+
+let RECORDS = load(K_REC,null);
+let SET     = Object.assign({},DEFAULTS,load(K_SET,{}));
+const SEED  = [{"id":"ppt003","date":"2026-08-18","shop":"후림두피케어","title":"원장","titlePos":"prefix","name":"~~~","course":"","signer":"drbae","signName":"","signTitle":"","override":"온라인 교육 및 상담 완료","issued":true,"note":"기존 PPT 이관"},{"id":"ppt005","date":"2026-08-13","shop":"스파올린","title":"원장","titlePos":"prefix","name":"주예린","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt013","date":"2026-04-12","shop":"바르벨 뷰티","title":"원장","titlePos":"prefix","name":"정유진","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt014","date":"2026-04-12","shop":"수수 에스테틱","title":"원장","titlePos":"prefix","name":"하수연","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt015","date":"2026-04-12","shop":"애몽스킨케어","title":"원장","titlePos":"prefix","name":"박인애","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt008","date":"2026-03-06","shop":"더블룸스튜디오","title":"원장","titlePos":"prefix","name":"이지현","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt009","date":"2026-03-06","shop":"미쁘다뷰티","title":"원장","titlePos":"prefix","name":"박정애","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt010","date":"2026-03-06","shop":"에밀리뷰티","title":"원장","titlePos":"prefix","name":"이자림","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt017","date":"2026-03-06","shop":"더블룸스튜디오 익산","title":"원장","titlePos":"prefix","name":"이지현","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt018","date":"2026-03-06","shop":"미쁘다뷰티 전주","title":"원장","titlePos":"prefix","name":"박정애","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt019","date":"2026-03-06","shop":"에밀리뷰티 일산","title":"원장","titlePos":"prefix","name":"이자림","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt023","date":"2025-11-07","shop":"예지음에스테틱","title":"원장","titlePos":"prefix","name":"오혜지","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt024","date":"2025-11-07","shop":"하이글림","title":"원장","titlePos":"prefix","name":"정지혜","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt021","date":"2025-10-24","shop":"비롯","title":"원장","titlePos":"prefix","name":"은명아","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt026","date":"2025-10-24","shop":"남신","title":"원장","titlePos":"prefix","name":"남지선","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt027","date":"2025-10-24","shop":"자미한 한라대점","title":"원장","titlePos":"prefix","name":"황혜선","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt028","date":"2025-10-24","shop":"고운선에스테틱","title":"원장","titlePos":"prefix","name":"추선미","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt029","date":"2025-10-24","shop":"WAXING HYUN","title":"원장","titlePos":"prefix","name":"한혜선","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt031","date":"2025-09-18","shop":"뷰티라움","title":"원장","titlePos":"prefix","name":"남은지","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt032","date":"2025-09-18","shop":"아윤에스테틱","title":"원장","titlePos":"prefix","name":"김지영","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt033","date":"2025-09-18","shop":"마리뷰티","title":"원장","titlePos":"prefix","name":"정지혜","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt034","date":"2025-09-18","shop":"피부의정석","title":"원장","titlePos":"prefix","name":"정소이","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt035","date":"2025-09-18","shop":"쟌피오베르","title":"원장","titlePos":"prefix","name":"문진선","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt036","date":"2025-09-18","shop":"스칼프바이브","title":"원장","titlePos":"prefix","name":"김영미","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt037","date":"2025-09-18","shop":"우화로운 뷰티","title":"원장","titlePos":"prefix","name":"김영숙","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt038","date":"2025-09-18","shop":"올린 뷰티","title":"원장","titlePos":"prefix","name":"주예린","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt039","date":"2025-09-18","shop":"윤이나다","title":"원장","titlePos":"prefix","name":"윤하은","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt040","date":"2025-09-18","shop":"힐링명가","title":"원장","titlePos":"prefix","name":"김성은","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt041","date":"2025-09-18","shop":"리에스테틱","title":"원장","titlePos":"prefix","name":"심가영","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt042","date":"2025-09-18","shop":"Seul beauty","title":"원장","titlePos":"prefix","name":"김슬이","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt044","date":"2025-05-31","shop":"PLAZE BEAUTY","title":"원장","titlePos":"prefix","name":"임은희","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt045","date":"2025-05-31","shop":"라떼르브 스킨케어","title":"원장","titlePos":"prefix","name":"류수민","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt046","date":"2025-05-31","shop":"MANOBELLA SPA","title":"원장","titlePos":"prefix","name":"신은지","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt047","date":"2025-05-31","shop":"커플라뷰티","title":"원장","titlePos":"prefix","name":"김지아","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt048","date":"2025-05-31","shop":"나비잠 피부관리","title":"원장","titlePos":"prefix","name":"김경아","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt050","date":"2025-04-26","shop":"강남 뷰티해온","title":"원장","titlePos":"prefix","name":"신혜연","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt051","date":"2025-04-26","shop":"미네일","title":"원장","titlePos":"prefix","name":"이민혜","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt053","date":"2025-03-23","shop":"스킨키마아","title":"","titlePos":"prefix","name":"Ham Young Joo","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt054","date":"2025-03-23","shop":"휴엔비에스테틱","title":"","titlePos":"prefix","name":"Jeong Hyunju","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt055","date":"2025-03-23","shop":"Whitewitch","title":"","titlePos":"prefix","name":"Baek So Ra","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt056","date":"2025-03-23","shop":"Whitewitch","title":"","titlePos":"prefix","name":"Hwang Hae Jin","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt057","date":"2025-03-23","shop":"또또에스테틱1004","title":"","titlePos":"prefix","name":"Jung Hye Jung","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt058","date":"2025-03-23","shop":"티아뷰티랩","title":"","titlePos":"prefix","name":"Ju Hee Seo","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt059","date":"2025-03-23","shop":"ONUL Aesthetic","title":"","titlePos":"prefix","name":"Chae Huikyung","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt060","date":"2025-03-23","shop":"Clean Skin","title":"","titlePos":"prefix","name":"HA SUYEON","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt062","date":"2025-02-01","shop":"Chaeum Mi","title":"대표","titlePos":"suffix","name":"강미선","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt063","date":"2025-02-01","shop":"&Mano, Yeo Ji Hyun","title":"대표","titlePos":"suffix","name":"여지현","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt064","date":"2025-02-01","shop":"K. Mo. Medicare","title":"대표","titlePos":"suffix","name":"김현희","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt065","date":"2025-02-01","shop":"Lohana. Co Skin","title":"대표","titlePos":"suffix","name":"한이나","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt066","date":"2025-02-01","shop":"Vara Aesthetic","title":"대표","titlePos":"suffix","name":"정해연","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt068","date":"2025-02-01","shop":"Reverse, Kwon Miran","title":"대표","titlePos":"suffix","name":"권미란","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt069","date":"2025-02-01","shop":"Bless Spa, Seo Hanna","title":"대표","titlePos":"suffix","name":"서한나","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt070","date":"2025-02-01","shop":"DIV , Oh Yoon Koung","title":"대표","titlePos":"suffix","name":"오윤경","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt071","date":"2025-02-01","shop":"Jeong Eun Ji","title":"대표","titlePos":"suffix","name":"정은지","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt072","date":"2025-02-01","shop":"V derm, Choi Yoon","title":"대표","titlePos":"suffix","name":"최윤","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt073","date":"2025-02-01","shop":"Lee Hee Jin","title":"대표","titlePos":"suffix","name":"이희진","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt074","date":"2025-02-01","shop":"Han Jeong Hee","title":"대표","titlePos":"suffix","name":"한정희","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt075","date":"2025-02-01","shop":"Hangyul, Im Hye Jo","title":"대표","titlePos":"suffix","name":"임혜조","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt076","date":"2025-02-01","shop":"Kim Min Jung","title":"대표","titlePos":"suffix","name":"김민정","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt077","date":"2025-02-01","shop":"Yeon Seung Hyun","title":"대표","titlePos":"suffix","name":"연승현","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt078","date":"2025-02-01","shop":"Ezsalin, Lee Jiyoung","title":"대표","titlePos":"suffix","name":"이지영","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt079","date":"2025-02-01","shop":"Mizack, Lee Jiyoung","title":"대표","titlePos":"suffix","name":"이지영","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt080","date":"2025-02-01","shop":"Place el, Park Jiyoung","title":"대표","titlePos":"suffix","name":"박지영","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt081","date":"2025-02-01","shop":"Sien, Moon Jiwon","title":"대표","titlePos":"suffix","name":"문지원","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt082","date":"2025-02-01","shop":"Noe Eun Sol","title":"대표","titlePos":"suffix","name":"노은솔","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt083","date":"2025-02-01","shop":"Wereve, Kim Juha","title":"대표","titlePos":"suffix","name":"김주하","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt087","date":"2024-09-23","shop":"AcneSkin Lab","title":"대표","titlePos":"suffix","name":"아크네스킨랩 최소연","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt088","date":"2024-09-23","shop":"PureView Aestethic","title":"대표","titlePos":"suffix","name":"퓨어뷰 에스테틱 정은희","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt090","date":"2023-11-05","shop":"Pur:bel Aesthetic","title":"대표","titlePos":"suffix","name":"퓨어벨 에스테틱 장연우","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt091","date":"2023-11-05","shop":"Dona Aesthetic","title":"대표","titlePos":"suffix","name":"도나 에스테틱 조혜진","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt092","date":"2023-11-05","shop":"12 boutique Skin","title":"대표","titlePos":"suffix","name":"일리부티크 스킨 배장미","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt093","date":"2023-11-05","shop":"Labelle Aesthetic","title":"대표","titlePos":"suffix","name":"라벨르 에스테틱 박인영","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt094","date":"2023-11-05","shop":"Lereve Skincare","title":"대표","titlePos":"suffix","name":"르헤브 스킨케어 사현지","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt095","date":"2023-11-05","shop":"Pur:bel Aesthetic","title":"대표","titlePos":"suffix","name":"퓨어벨 에스테틱 장연우","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt096","date":"2023-11-05","shop":"Dona Aesthetic","title":"대표","titlePos":"suffix","name":"도나 에스테틱 조혜진","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt097","date":"2023-11-05","shop":"12 boutique Skin","title":"대표","titlePos":"suffix","name":"일리부티크 스킨 배장미","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt098","date":"2023-11-05","shop":"Labelle Aesthetic","title":"대표","titlePos":"suffix","name":"라벨르 에스테틱 박인영","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt099","date":"2023-11-05","shop":"Lereve Skincare","title":"대표","titlePos":"suffix","name":"르헤브 스킨케어 사현지","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt103","date":"2023-11-04","shop":"Skin Smith Aesthetic","title":"대표","titlePos":"suffix","name":"스킨스미스 김정아","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt104","date":"2023-11-04","shop":"Renuvo Aesthetic","title":"대표","titlePos":"suffix","name":"르누보 권희정","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt105","date":"2023-11-04","shop":"Arteluz Aesthetic","title":"대표","titlePos":"suffix","name":"아르떼루즈 박수진","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt113","date":"2023-10-23","shop":"Skin Smith","title":"대표","titlePos":"suffix","name":"스킨스미스 김정아","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt114","date":"2023-10-23","shop":"Renuvo Aesthetic","title":"대표","titlePos":"suffix","name":"르누보 에스테틱 권희정","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt115","date":"2023-10-23","shop":"Arteluz Aesthetic","title":"대표","titlePos":"suffix","name":"아르떼루즈 박수진","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt108","date":"2023-10-22","shop":"Mare Skin Aesthetic","title":"대표","titlePos":"suffix","name":"마레스킨 에스테틱 이도겸","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt109","date":"2023-10-22","shop":"Youn Beautyroom","title":"대표","titlePos":"suffix","name":"예쁠연 뷰티룸 최소연","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt110","date":"2023-10-22","shop":"Tomorrow Top Aesthetic","title":"대표","titlePos":"suffix","name":"신은미","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt111","date":"2023-10-22","shop":"Mimong Aesthetic","title":"대표","titlePos":"suffix","name":"미몽 에스테틱 황선화","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt112","date":"2023-10-22","shop":"Kelly Beauty Co","title":"대표","titlePos":"suffix","name":"켈리뷰티코 송민지","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt117","date":"2023-10-19","shop":"Yulha Aesthetic","title":"대표","titlePos":"suffix","name":"율하에스테틱 안규미","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt118","date":"2023-10-19","shop":"Vere Aesthetic","title":"대표","titlePos":"suffix","name":"뷔에르 김은지","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt119","date":"2023-10-19","shop":"Ohrosi Aesthetic","title":"대표","titlePos":"suffix","name":"오롯이 에스테틱 김이현","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt120","date":"2023-10-19","shop":"Skinfit Aesthetic","title":"대표","titlePos":"suffix","name":"스킨핏 에스테틱 이혜연","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt122","date":"2023-10-15","shop":"Cclim Aesthetic","title":"대표","titlePos":"suffix","name":"끌림에스테틱 이은아","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt123","date":"2023-10-15","shop":"Ifiond Skin","title":"대표","titlePos":"suffix","name":"이피온드 이예성","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt124","date":"2023-10-15","shop":"Triver Aesthetic","title":"대표","titlePos":"suffix","name":"트리버에스테틱 이채하","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt125","date":"2023-10-15","shop":"Black Sugar","title":"대표","titlePos":"suffix","name":"블랙슈가 임하정","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt127","date":"2023-10-13","shop":"Salon de Cozy","title":"대표","titlePos":"suffix","name":"살롱드코지 용윤서","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt128","date":"2023-10-13","shop":"Bskin Aestetic","title":"대표","titlePos":"suffix","name":"비스킨랩 이다은","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt129","date":"2023-10-11","shop":"Mielle Aesthetic","title":"대표","titlePos":"suffix","name":"미엘르 에스테틱 이태양","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt130","date":"2023-10-11","shop":"Iwony Aesthetic","title":"대표","titlePos":"suffix","name":"아이워니 에스테틱 김서원","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt131","date":"2023-10-11","shop":"Iwony Aesthetic","title":"대표","titlePos":"suffix","name":"디오아르 에스테틱 권소영","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt133","date":"2023-09-20","shop":"Jay Unnie","title":"대표","titlePos":"suffix","name":"제이언니 서지혜","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt135","date":"2023-09-20","shop":"Some Beauty","title":"대표","titlePos":"suffix","name":"솜이뷰티 김수현","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt136","date":"2023-09-15","shop":"Onjeon Me Time","title":"대표","titlePos":"suffix","name":"온전미타임 손혜진","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt137","date":"2023-09-15","shop":"Foresthe","title":"대표","titlePos":"suffix","name":"포레스떼 주진선","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt138","date":"2023-09-10","shop":"Moodling","title":"대표","titlePos":"suffix","name":"무들링 이경연","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt139","date":"2023-09-10","shop":"Habrere","title":"대표","titlePos":"suffix","name":"김지수","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt140","date":"2023-09-10","shop":"Skin Museum","title":"대표","titlePos":"suffix","name":"스킨뮤지엄 박경민","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt141","date":"2023-09-10","shop":"Breheal","title":"대표","titlePos":"suffix","name":"브레일 김보민","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt142","date":"2023-08-24","shop":"SPA The Person","title":"대표","titlePos":"suffix","name":"스파더펄슨 오유림","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt143","date":"2023-08-09","shop":"LohanacoSkin","title":"","titlePos":"prefix","name":"로하나코스킨 (대표: 한이나)","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt144","date":"2023-08-09","shop":"LohanacoSkin","title":"","titlePos":"prefix","name":"로하나코스킨 (대표: 한이나)","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"}];
+if(RECORDS===null){ RECORDS = SEED.slice(); save(K_REC,RECORDS); save(K_SEED,1); }
+
+/* ───────── 유틸 ───────── */
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+function esc(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function todayISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fmtDate(iso,fmt){
+  if(!iso) return '';
+  const [y,m,d]=iso.split('-');
+  return (fmt||SET.datefmt).replace('YYYY',y).replace('MM',m).replace('DD',d);
+}
+function personLine(r){
+  const t=(r.title||'').trim(), n=(r.name||'').trim();
+  if(!t) return n;
+  if(!n) return t;
+  return r.titlePos==='suffix' ? n+' '+t : t+' '+n;
+}
+let toastT;
+function toast(msg){ const el=$('#toast'); el.textContent=msg; el.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('on'),2200); }
+
+/* ═══════════ 수료증 1장 렌더링 ═══════════ */
+function sheetHTML(r,opts){
+  opts=opts||{};
+  const S=SET, ul=S.underline?'text-decoration:underline;text-underline-offset:.16em;':'';
+  const sg=SIGNERS[r.signer]||{name:r.signName||'',title:r.signTitle||''};
+  const sName = r.signer==='custom' ? (r.signName||'') : sg.name;
+  const sTitle= r.signer==='custom' ? (r.signTitle||'') : sg.title;
+
+  // 위치 = 원본 좌표 + 전체 보정
+  const P=(o,dx)=>({ x:(o.x!=null?o.x:0)+S.ox, cx:(o.cx!=null?o.cx:0)+S.ox, y:o.y+S.oy });
+  const box=(o,size,cls,txt,extra)=>{
+    if(!txt) return '';
+    const p=P(o), st=[];
+    if(o.align==='center') st.push('left:'+(p.cx-70)+'mm','width:140mm','text-align:center');
+    else st.push('left:'+p.x+'mm');
+    st.push('top:'+p.y+'mm','font-size:'+size+'pt');
+    return '<div class="fld '+cls+'" style="'+st.join(';')+';'+(extra||'')+'">'+esc(txt)+'</div>';
+  };
+
+  const guides = opts.guides ? '<div class="guides">'
+      + '<i style="left:'+(LAYOUT.shop.cx+S.ox-38)+'mm;top:'+(LAYOUT.shop.y+S.oy-1.3)+'mm;width:76mm;height:14.5mm"></i>'
+      + '<i style="left:'+(LAYOUT.person.cx+S.ox-25)+'mm;top:'+(LAYOUT.person.y+S.oy-1.3)+'mm;width:50mm;height:7.3mm"></i>'
+      + '<i style="left:'+(LAYOUT.signName.x+S.ox-2.5)+'mm;top:'+(LAYOUT.signName.y+S.oy-1.3)+'mm;width:71mm;height:14.5mm"></i>'
+      + '<i style="left:'+(LAYOUT.signTitle.x+S.ox-2.5)+'mm;top:'+(LAYOUT.signTitle.y+S.oy-1.3)+'mm;width:47mm;height:7.3mm"></i>'
+      + '<i style="left:'+(LAYOUT.date.x+S.ox-2.5)+'mm;top:'+(LAYOUT.date.y+S.oy-1.3)+'mm;width:48mm;height:11.1mm"></i>'
+      + '</div>' : '';
+
+  const bg = (opts.bg && S.bg) ? '<img class="paper-bg" src="'+S.bg+'" alt="">' : '';
+
+  let right;
+  if((r.override||'').trim()){
+    right = box(LAYOUT.override, S.signSize-4, 'f-sans', r.override);
+  }else{
+    right = box(LAYOUT.signName, S.signSize, 'f-script', sName, ul)
+          + box(LAYOUT.signTitle, S.personSize, 'f-sans', sTitle);
+  }
+
+  return '<div class="sheet">'+bg+guides
+    + box(LAYOUT.shop,   S.shopSize,   'f-script', r.shop, ul)
+    + box(LAYOUT.person, S.personSize, 'f-sans',   personLine(r))
+    + right
+    + box(LAYOUT.date,   S.dateSize,   'f-script', fmtDate(r.date))
+    + '</div>';
+}
+
+/* ═══════════ 발급 탭 ═══════════ */
+let editingId=null;
+
+function formData(){
+  return {
+    id: editingId || uid(),
+    date: $('#f-date').value,
+    shop: $('#f-shop').value.trim(),
+    title: $('#f-title').value,
+    titlePos: $('#f-titlepos').value,
+    name: $('#f-name').value.trim(),
+    course: $('#f-course').value.trim(),
+    signer: $('#f-signer').value,
+    signName: $('#f-signName').value.trim(),
+    signTitle: $('#f-signTitle').value.trim(),
+    override: $('#f-override').value.trim(),
+    issued: $('#f-issued').checked,
+    note: $('#f-note').value.trim()
+  };
+}
+function fillForm(r){
+  $('#f-date').value=r.date||todayISO();
+  $('#f-shop').value=r.shop||'';
+  $('#f-title').value=r.title!==undefined?r.title:'원장';
+  $('#f-titlepos').value=r.titlePos||'prefix';
+  $('#f-name').value=r.name||'';
+  $('#f-course').value=r.course||'';
+  $('#f-signer').value=r.signer||'drbae';
+  $('#f-signName').value=r.signName||'';
+  $('#f-signTitle').value=r.signTitle||'';
+  $('#f-override').value=r.override||'';
+  $('#f-issued').checked=r.issued!==false;
+  $('#f-note').value=r.note||'';
+  syncSigner(); renderPreview();
+}
+function syncSigner(){ $('#f-signerCustom').style.display = $('#f-signer').value==='custom'?'flex':'none'; }
+function renderPreview(){
+  const r=formData();
+  $('#f-personEcho').textContent = personLine(r) || '—';
+  $('#preview').outerHTML = sheetHTML(r,{guides:$('#showGuides').checked, bg:true}).replace('class="sheet"','class="sheet" id="preview"');
+}
+function resetForm(){
+  editingId=null; $('#editBar').style.display='none';
+  fillForm({date:todayISO(),title:'원장',titlePos:'prefix',signer:'drbae',issued:true});
+}
+
+/* ═══════════ 인쇄 ═══════════ */
+function printRecords(list){
+  if(!list.length){ toast('인쇄할 대상이 없습니다'); return; }
+  $('#printArea').innerHTML = list.map(r=>sheetHTML(r,{guides:false,bg:false})).join('');
+  setTimeout(()=>window.print(),60);
+}
+
+/* ═══════════ 명단 탭 ═══════════ */
+let selected=new Set();
+
+function filtered(){
+  const q=$('#q').value.trim().toLowerCase(), from=$('#qFrom').value, to=$('#qTo').value, iss=$('#qIssued').value;
+  return RECORDS.filter(r=>{
+    if(from && (r.date||'')<from) return false;
+    if(to   && (r.date||'')>to)   return false;
+    if(iss==='1' && r.issued===false) return false;
+    if(iss==='0' && r.issued!==false) return false;
+    if(q){
+      const hay=[r.shop,r.name,r.title,r.course,r.note].join(' ').toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  }).sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (a.shop||'').localeCompare(b.shop||''));
+}
+
+function renderList(){
+  const rows=filtered(), grp=$('#qGroup').value==='date';
+  const tb=$('#tbody');
+  $('#stAll').textContent=RECORDS.length;
+  $('#stIssued').textContent=RECORDS.filter(r=>r.issued!==false).length;
+  $('#stRecord').textContent=RECORDS.filter(r=>r.issued===false).length;
+  $('#stShown').textContent=rows.length;
+  $('#tabCount').textContent=RECORDS.length;
+  $('#selCnt').textContent=selected.size;
+
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="8"><div class="empty">조건에 맞는 기록이 없습니다.</div></td></tr>'; return; }
+
+  let html='', lastDate=null;
+  for(const r of rows){
+    if(grp && r.date!==lastDate){
+      lastDate=r.date;
+      const n=rows.filter(x=>x.date===r.date).length;
+      html+='<tr class="grp"><td colspan="8">'+esc(fmtDate(r.date,'YYYY.MM.DD')||'날짜 미입력')+' · '+n+'명</td></tr>';
+    }
+    html+='<tr class="'+(selected.has(r.id)?'sel':'')+'" data-id="'+r.id+'">'
+      + '<td class="c"><input type="checkbox" class="rsel" '+(selected.has(r.id)?'checked':'')+' style="accent-color:var(--accent)"></td>'
+      + '<td>'+esc(fmtDate(r.date,'YYYY.MM.DD'))+'</td>'
+      + '<td><b>'+esc(r.shop)+'</b></td>'
+      + '<td>'+esc(personLine(r))+'</td>'
+      + '<td style="color:var(--muted)">'+esc(r.course||'')+'</td>'
+      + '<td class="c">'+(r.issued===false?'<span class="badge record">기록만</span>':'<span class="badge issued">발급</span>')+'</td>'
+      + '<td style="color:var(--muted)">'+esc(r.note||'')+'</td>'
+      + '<td><div class="rowbtns">'
+        + '<button class="btn sm" data-act="print">인쇄</button>'
+        + '<button class="btn sm" data-act="edit">불러오기</button>'
+        + '<button class="btn sm" data-act="quick">수정</button>'
+        + '<button class="btn sm danger" data-act="del">삭제</button>'
+      + '</div></td></tr>';
+  }
+  tb.innerHTML=html;
+}
+
+function upsert(r){
+  const i=RECORDS.findIndex(x=>x.id===r.id);
+  if(i>=0) RECORDS[i]=r; else RECORDS.unshift(r);
+  save(K_REC,RECORDS); renderList();
+}
+
+/* ═══════════ 모달 ═══════════ */
+let modalId=null;
+function openModal(r){
+  modalId = r ? r.id : null;
+  $('#mTitle').textContent = r ? '기록 수정' : '명단에 직접 추가';
+  $('#m-date').value=(r&&r.date)||todayISO();
+  $('#m-shop').value=(r&&r.shop)||'';
+  $('#m-title').value=r?(r.title||''):'원장';
+  $('#m-titlepos').value=(r&&r.titlePos)||'prefix';
+  $('#m-name').value=(r&&r.name)||'';
+  $('#m-course').value=(r&&r.course)||'';
+  $('#m-note').value=(r&&r.note)||'';
+  $('#m-issued').checked = r ? r.issued!==false : false;
+  $('#modal').classList.add('on');
+  setTimeout(()=>$('#m-shop').focus(),50);
+}
+function closeModal(){ $('#modal').classList.remove('on'); modalId=null; }
+
+/* ═══════════ 설정 ═══════════ */
+const CAL=['ox','oy','shopSize','personSize','signSize','dateSize'];
+function bindCalib(){
+  CAL.forEach(k=>{
+    const rng=$('#c-'+k), num=$('#n-'+k);
+    const set=v=>{ SET[k]=parseFloat(v); rng.value=SET[k]; num.value=SET[k]; save(K_SET,SET); renderPreview(); };
+    rng.value=SET[k]; num.value=SET[k];
+    rng.addEventListener('input',e=>set(e.target.value));
+    num.addEventListener('change',e=>set(e.target.value||0));
+  });
+  $('#c-underline').checked=SET.underline;
+  $('#c-underline').addEventListener('change',e=>{ SET.underline=e.target.checked; save(K_SET,SET); renderPreview(); });
+  $('#c-datefmt').value=SET.datefmt;
+  $('#c-datefmt').addEventListener('change',e=>{ SET.datefmt=e.target.value; save(K_SET,SET); renderPreview(); renderList(); });
+  $('#btnResetCalib').addEventListener('click',()=>{
+    Object.assign(SET,DEFAULTS,{bg:SET.bg}); save(K_SET,SET);
+    CAL.forEach(k=>{ $('#c-'+k).value=SET[k]; $('#n-'+k).value=SET[k]; });
+    $('#c-underline').checked=SET.underline; $('#c-datefmt').value=SET.datefmt;
+    renderPreview(); toast('기본값으로 되돌렸습니다');
+  });
+  storeInfo();
+}
+function storeInfo(){
+  const bytes=new Blob([localStorage.getItem(K_REC)||'']).size;
+  $('#storeInfo').textContent='기록 '+RECORDS.length+'건 · 약 '+(bytes/1024).toFixed(1)+' KB 사용 중'+(SET.bg?' · 배경 이미지 저장됨':'');
+}
+
+/* ═══════════ 내보내기 / 복원 ═══════════ */
+function download(name,content,type){
+  const b=new Blob([content],{type:type||'text/plain;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function exportCsv(){
+  const rows=filtered();
+  const head=['수료일자','샵이름','직함','이름','과정명','구분','비고'];
+  const body=rows.map(r=>[fmtDate(r.date,'YYYY.MM.DD'),r.shop,r.title,r.name,r.course,(r.issued===false?'기록만':'발급'),r.note]
+    .map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(','));
+  download('닥터배_수료자명단_'+todayISO()+'.csv','﻿'+[head.join(','),...body].join('\r\n'),'text/csv;charset=utf-8');
+}
+function exportJson(){
+  download('닥터배_수료증_백업_'+todayISO()+'.json',
+    JSON.stringify({v:1,exported:new Date().toISOString(),settings:SET,records:RECORDS},null,1),
+    'application/json');
+}
+
+/* ═══════════ 이벤트 바인딩 ═══════════ */
+// 탭
+$$('.tab').forEach(b=>b.addEventListener('click',()=>{
+  $$('.tab').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  $$('.view').forEach(v=>v.classList.remove('on'));
+  $('#v-'+b.dataset.view).classList.add('on');
+  if(b.dataset.view==='list') renderList();
+  if(b.dataset.view==='settings') storeInfo();
+}));
+
+// 폼 → 미리보기
+['f-date','f-shop','f-title','f-titlepos','f-name','f-signer','f-signName','f-signTitle','f-override']
+  .forEach(id=>{ const el=$('#'+id); el.addEventListener('input',renderPreview); el.addEventListener('change',renderPreview); });
+$('#f-signer').addEventListener('change',()=>{ syncSigner(); renderPreview(); });
+$('#showGuides').addEventListener('change',renderPreview);
+function applyZoom(){
+  const z=+$('#zoom').value, k=z/100;
+  $('#zoomVal').textContent=z+'%';
+  $('#stageIn').style.transform='scale('+k+')';
+  const w=$('#stageWrap');
+  w.style.width=(297*k)+'mm'; w.style.height=(210*k)+'mm';
+}
+$('#zoom').addEventListener('input',applyZoom);
+function fitZoom(){
+  const avail=$('.stage').clientWidth-40;              // 좌우 padding 제외
+  const mmPx=$('#preview')?$('#preview').getBoundingClientRect().width/(+$('#zoom').value/100):0;
+  const full=mmPx||1123;                               // 297mm의 실제 px
+  const z=Math.max(30,Math.min(130,Math.floor(avail/full*100)));
+  $('#zoom').value=z; applyZoom();
+}
+window.addEventListener('resize',()=>{ clearTimeout(window.__fz); window.__fz=setTimeout(fitZoom,120); });
+
+function validate(r){
+  if(!r.shop){ toast('샵 이름을 입력하세요'); $('#f-shop').focus(); return false; }
+  if(!r.date){ toast('수료 일자를 선택하세요'); $('#f-date').focus(); return false; }
+  return true;
+}
+$('#btnSavePrint').addEventListener('click',()=>{
+  const r=formData(); if(!validate(r)) return;
+  upsert(r); printRecords([r]);
+  toast(editingId?'수정 후 인쇄합니다':'명단에 저장하고 인쇄합니다'); resetForm();
+});
+$('#btnSaveOnly').addEventListener('click',()=>{
+  const r=formData(); if(!validate(r)) return;
+  upsert(r); toast(editingId?'수정했습니다':'명단에 저장했습니다'); resetForm();
+});
+$('#btnPrintOnly').addEventListener('click',()=>{ const r=formData(); if(!validate(r)) return; printRecords([r]); });
+$('#btnReset').addEventListener('click',resetForm);
+$('#cancelEdit').addEventListener('click',e=>{ e.preventDefault(); resetForm(); });
+
+// 명단 필터
+['q','qFrom','qTo','qIssued','qGroup'].forEach(id=>{
+  const el=$('#'+id); el.addEventListener('input',renderList); el.addEventListener('change',renderList);
+});
+$('#qClear').addEventListener('click',()=>{
+  $('#q').value=''; $('#qFrom').value=''; $('#qTo').value=''; $('#qIssued').value='all'; renderList();
+});
+$('#selAll').addEventListener('change',e=>{
+  if(e.target.checked) filtered().forEach(r=>selected.add(r.id)); else selected.clear();
+  renderList();
+});
+$('#tbody').addEventListener('click',e=>{
+  const tr=e.target.closest('tr[data-id]'); if(!tr) return;
+  const r=RECORDS.find(x=>x.id===tr.dataset.id); if(!r) return;
+  if(e.target.classList.contains('rsel')){
+    if(e.target.checked) selected.add(r.id); else selected.delete(r.id);
+    tr.classList.toggle('sel',e.target.checked); $('#selCnt').textContent=selected.size; return;
+  }
+  const act=e.target.dataset.act; if(!act) return;
+  if(act==='print') printRecords([r]);
+  if(act==='quick') openModal(r);
+  if(act==='edit'){
+    editingId=r.id; fillForm(r); $('#editBar').style.display='block';
+    $$('.tab').forEach(x=>x.classList.remove('on')); $$('.tab')[0].classList.add('on');
+    $$('.view').forEach(v=>v.classList.remove('on')); $('#v-issue').classList.add('on');
+    window.scrollTo(0,0);
+  }
+  if(act==='del'){
+    if(!confirm('“'+(r.shop||'')+' / '+personLine(r)+'” 기록을 삭제할까요?')) return;
+    RECORDS=RECORDS.filter(x=>x.id!==r.id); selected.delete(r.id); save(K_REC,RECORDS); renderList(); toast('삭제했습니다');
+  }
+});
+$('#btnPrintSel').addEventListener('click',()=>{
+  const list=filtered().filter(r=>selected.has(r.id));
+  if(!list.length){ toast('먼저 인쇄할 사람을 체크하세요'); return; }
+  printRecords(list);
+});
+$('#btnAddManual').addEventListener('click',()=>openModal(null));
+$('#btnCsv').addEventListener('click',exportCsv);
+$('#btnJson').addEventListener('click',exportJson);
+$('#btnJson2').addEventListener('click',exportJson);
+$('#btnImport').addEventListener('click',()=>$('#importFile').click());
+$('#btnImport2').addEventListener('click',()=>$('#importFile').click());
+$('#importFile').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const fr=new FileReader();
+  fr.onload=()=>{
+    try{
+      const d=JSON.parse(fr.result);
+      const inc=Array.isArray(d)?d:(d.records||[]);
+      if(!inc.length) throw 0;
+      const mode=confirm('불러온 기록 '+inc.length+'건을\n\n[확인] 기존 기록에 합치기\n[취소] 기존 기록을 지우고 교체');
+      if(mode){
+        const seen=new Set(RECORDS.map(r=>[r.date,r.shop,r.name].join('|')));
+        let add=0;
+        inc.forEach(r=>{ const k=[r.date,r.shop,r.name].join('|'); if(!seen.has(k)){ seen.add(k); RECORDS.push(Object.assign({id:uid()},r)); add++; } });
+        toast(add+'건을 추가했습니다');
+      }else{
+        RECORDS=inc.map(r=>Object.assign({id:uid()},r)); toast('기록을 교체했습니다');
+      }
+      if(d.settings){ SET=Object.assign({},DEFAULTS,d.settings); save(K_SET,SET); CAL.forEach(k=>{$('#c-'+k).value=SET[k];$('#n-'+k).value=SET[k];}); }
+      save(K_REC,RECORDS); renderList(); storeInfo(); renderPreview();
+    }catch(err){ toast('백업 파일을 읽을 수 없습니다'); }
+    e.target.value='';
+  };
+  fr.readAsText(f);
+});
+$('#btnWipe').addEventListener('click',()=>{
+  if(!confirm('저장된 '+RECORDS.length+'건의 기록을 모두 삭제합니다.\n되돌릴 수 없습니다. 먼저 백업했나요?')) return;
+  if(!confirm('정말 전체 삭제할까요?')) return;
+  RECORDS=[]; selected.clear(); save(K_REC,RECORDS); renderList(); storeInfo(); toast('전체 삭제했습니다');
+});
+
+// 모달
+$('#mCancel').addEventListener('click',closeModal);
+$('#modal').addEventListener('click',e=>{ if(e.target.id==='modal') closeModal(); });
+$('#mSave').addEventListener('click',()=>{
+  const shop=$('#m-shop').value.trim();
+  if(!shop && !$('#m-name').value.trim()){ toast('샵 이름 또는 이름을 입력하세요'); return; }
+  const base = modalId ? Object.assign({},RECORDS.find(x=>x.id===modalId)) : {id:uid(),signer:'drbae'};
+  Object.assign(base,{
+    date:$('#m-date').value, shop:shop, title:$('#m-title').value, titlePos:$('#m-titlepos').value,
+    name:$('#m-name').value.trim(), course:$('#m-course').value.trim(),
+    note:$('#m-note').value.trim(), issued:$('#m-issued').checked
+  });
+  upsert(base); closeModal(); storeInfo();
+  toast(modalId?'수정했습니다':'명단에 추가했습니다');
+});
+
+// 배경 이미지
+$('#bgFile').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const fr=new FileReader();
+  fr.onload=()=>{ SET.bg=fr.result; save(K_SET,SET); renderPreview(); storeInfo(); toast('미리보기 배경을 설정했습니다'); };
+  fr.readAsDataURL(f);
+});
+$('#btnBgClear').addEventListener('click',()=>{ SET.bg=''; save(K_SET,SET); renderPreview(); storeInfo(); toast('배경을 지웠습니다'); });
+
+// 단축키
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape') closeModal();
+  if((e.ctrlKey||e.metaKey)&&e.key==='Enter'&&$('#v-issue').classList.contains('on')) $('#btnSavePrint').click();
+});
+
+/* ═══════════ 초기화 ═══════════ */
+bindCalib();
+resetForm();
+applyZoom();
+fitZoom();
+renderList();
+</script>
+</body>
+</html>

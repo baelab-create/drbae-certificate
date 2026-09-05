@@ -26,6 +26,10 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .topbar-in{max-width:1440px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:28px;height:58px}
 .brand{display:flex;align-items:baseline;gap:10px;font-weight:700;font-size:16px;white-space:nowrap}
 .brand small{font-weight:400;color:var(--muted);font-size:12px}
+#syncChip{display:flex;align-items:center;gap:7px;border:1px solid var(--line2);background:#fff;
+  border-radius:99px;padding:5px 13px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap}
+#syncChip:hover{background:#f6f7f9}
+#syncChip i{width:8px;height:8px;border-radius:50%;background:#9aa3ad;display:block;flex:0 0 auto}
 .tabs{display:flex;gap:4px;margin-left:auto}
 .tab{background:none;border:0;padding:9px 18px;border-radius:8px;cursor:pointer;color:var(--muted);font-weight:500}
 .tab:hover{background:#f0f2f5}
@@ -157,6 +161,7 @@ td.c,th.c{text-align:center}
 
 <div class="topbar"><div class="topbar-in">
   <div class="brand">닥터배 수료증 <small>Certificate Issuer</small></div>
+  <button id="syncChip" title="클릭하면 지금 동기화합니다"><i></i>대기</button>
   <nav class="tabs">
     <button class="tab on" data-view="issue">발급하기</button>
     <button class="tab" data-view="list">수료자 명단 <span class="cnt" id="tabCount">0</span></button>
@@ -325,6 +330,43 @@ td.c,th.c{text-align:center}
 <div class="set-grid">
 
   <div class="panel">
+    <h2>기기 간 동기화</h2>
+    <div class="body">
+      <p style="margin-top:0;color:var(--muted);font-size:12px">
+        명단은 저장소의 <b>records.json</b> 한 파일에 저장됩니다.
+        <b>읽기는 토큰 없이</b> 어느 기기에서든 되고, <b>새 발급을 저장하려면</b>
+        이 기기에 개인 토큰을 한 번 등록해야 합니다.
+      </p>
+      <div class="field">
+        <label>이 기기의 토큰 상태</label>
+        <div id="tokState" style="padding:9px 11px;background:#fafbfc;border:1px solid var(--line);border-radius:7px;font-size:13px">확인 중…</div>
+      </div>
+      <div class="field">
+        <label for="tokInput">GitHub 개인 토큰 등록</label>
+        <input type="password" id="tokInput" placeholder="github_pat_… 붙여넣기" autocomplete="off"
+               style="width:100%;padding:9px 11px;border:1px solid var(--line2);border-radius:7px">
+        <div class="hint">
+          <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">토큰 만들기</a> →
+          Repository access 는 <b>drbae-certificate</b> 만, Permissions 는 <b>Contents: Read and write</b> 하나만 주세요.
+          입력한 토큰은 이 브라우저에만 저장되고 어디에도 전송되지 않습니다.
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="tokSave">토큰 저장</button>
+        <button class="btn" id="tokClear">토큰 삭제</button>
+      </div>
+      <div class="actions">
+        <button class="btn" id="btnPullNow">지금 다시 불러오기</button>
+        <button class="btn" id="btnPushNow">지금 저장하기</button>
+      </div>
+      <div style="margin-top:12px;font-size:11px;color:var(--muted)">
+        기록 원본: <a href="https://github.com/baelab-create/drbae-certificate/blob/main/records.json" target="_blank" rel="noopener">records.json</a>
+        · 발급할 때마다 커밋되어 변경 이력이 그대로 남습니다.
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
     <h2>인쇄 위치 미세 조정</h2>
     <div class="body">
       <p style="margin-top:0;color:var(--muted);font-size:12px">
@@ -471,17 +513,130 @@ const DEFAULTS = {
 // 화면 미리보기에 쓸 배경 (사용자 업로드본이 있으면 그것을, 없으면 기본 디자인)
 function bgSrc(){ return SET.bg || BG_BUILTIN; }
 
-const K_REC='drbae_cert_records_v1', K_SET='drbae_cert_settings_v1', K_SEED='drbae_cert_seeded_v1';
+const K_REC='drbae_cert_records_v1', K_SET='drbae_cert_settings_v1';
+const K_TOKEN='drbae_cert_token_v1', K_DEL='drbae_cert_deleted_v1';
+/* GitHub 저장소를 그대로 DB 로 쓴다.
+   읽기 = 공개 저장소라 토큰 없이 어느 기기에서나 / 쓰기 = 기기마다 개인 토큰 1회 등록 */
+const GH = { owner:'baelab-create', repo:'drbae-certificate', path:'records.json', branch:'main' };
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 
 /* ───────── 저장소 ───────── */
 function load(k,d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch(e){ return d; } }
 function save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){ toast('저장 공간이 부족합니다'); } }
 
-let RECORDS = load(K_REC,null);
+let RECORDS = load(K_REC,[]);          // 마지막으로 동기화된 사본 (오프라인용 캐시)
 let SET     = Object.assign({},DEFAULTS,load(K_SET,{}));
-const SEED  = [{"id":"ppt003","date":"2026-08-18","shop":"후림두피케어","title":"원장","titlePos":"prefix","name":"~~~","course":"","signer":"drbae","signName":"","signTitle":"","override":"온라인 교육 및 상담 완료","issued":true,"note":"기존 PPT 이관"},{"id":"ppt005","date":"2026-08-13","shop":"스파올린","title":"원장","titlePos":"prefix","name":"주예린","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt013","date":"2026-04-12","shop":"바르벨 뷰티","title":"원장","titlePos":"prefix","name":"정유진","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt014","date":"2026-04-12","shop":"수수 에스테틱","title":"원장","titlePos":"prefix","name":"하수연","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt015","date":"2026-04-12","shop":"애몽스킨케어","title":"원장","titlePos":"prefix","name":"박인애","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt008","date":"2026-03-06","shop":"더블룸스튜디오","title":"원장","titlePos":"prefix","name":"이지현","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt009","date":"2026-03-06","shop":"미쁘다뷰티","title":"원장","titlePos":"prefix","name":"박정애","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt010","date":"2026-03-06","shop":"에밀리뷰티","title":"원장","titlePos":"prefix","name":"이자림","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt017","date":"2026-03-06","shop":"더블룸스튜디오 익산","title":"원장","titlePos":"prefix","name":"이지현","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt018","date":"2026-03-06","shop":"미쁘다뷰티 전주","title":"원장","titlePos":"prefix","name":"박정애","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt019","date":"2026-03-06","shop":"에밀리뷰티 일산","title":"원장","titlePos":"prefix","name":"이자림","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt023","date":"2025-11-07","shop":"예지음에스테틱","title":"원장","titlePos":"prefix","name":"오혜지","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt024","date":"2025-11-07","shop":"하이글림","title":"원장","titlePos":"prefix","name":"정지혜","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt021","date":"2025-10-24","shop":"비롯","title":"원장","titlePos":"prefix","name":"은명아","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt026","date":"2025-10-24","shop":"남신","title":"원장","titlePos":"prefix","name":"남지선","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt027","date":"2025-10-24","shop":"자미한 한라대점","title":"원장","titlePos":"prefix","name":"황혜선","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt028","date":"2025-10-24","shop":"고운선에스테틱","title":"원장","titlePos":"prefix","name":"추선미","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt029","date":"2025-10-24","shop":"WAXING HYUN","title":"원장","titlePos":"prefix","name":"한혜선","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt031","date":"2025-09-18","shop":"뷰티라움","title":"원장","titlePos":"prefix","name":"남은지","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt032","date":"2025-09-18","shop":"아윤에스테틱","title":"원장","titlePos":"prefix","name":"김지영","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt033","date":"2025-09-18","shop":"마리뷰티","title":"원장","titlePos":"prefix","name":"정지혜","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt034","date":"2025-09-18","shop":"피부의정석","title":"원장","titlePos":"prefix","name":"정소이","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt035","date":"2025-09-18","shop":"쟌피오베르","title":"원장","titlePos":"prefix","name":"문진선","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt036","date":"2025-09-18","shop":"스칼프바이브","title":"원장","titlePos":"prefix","name":"김영미","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt037","date":"2025-09-18","shop":"우화로운 뷰티","title":"원장","titlePos":"prefix","name":"김영숙","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt038","date":"2025-09-18","shop":"올린 뷰티","title":"원장","titlePos":"prefix","name":"주예린","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt039","date":"2025-09-18","shop":"윤이나다","title":"원장","titlePos":"prefix","name":"윤하은","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt040","date":"2025-09-18","shop":"힐링명가","title":"원장","titlePos":"prefix","name":"김성은","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt041","date":"2025-09-18","shop":"리에스테틱","title":"원장","titlePos":"prefix","name":"심가영","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt042","date":"2025-09-18","shop":"Seul beauty","title":"원장","titlePos":"prefix","name":"김슬이","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt044","date":"2025-05-31","shop":"PLAZE BEAUTY","title":"원장","titlePos":"prefix","name":"임은희","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt045","date":"2025-05-31","shop":"라떼르브 스킨케어","title":"원장","titlePos":"prefix","name":"류수민","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt046","date":"2025-05-31","shop":"MANOBELLA SPA","title":"원장","titlePos":"prefix","name":"신은지","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt047","date":"2025-05-31","shop":"커플라뷰티","title":"원장","titlePos":"prefix","name":"김지아","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt048","date":"2025-05-31","shop":"나비잠 피부관리","title":"원장","titlePos":"prefix","name":"김경아","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt050","date":"2025-04-26","shop":"강남 뷰티해온","title":"원장","titlePos":"prefix","name":"신혜연","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt051","date":"2025-04-26","shop":"미네일","title":"원장","titlePos":"prefix","name":"이민혜","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt053","date":"2025-03-23","shop":"스킨키마아","title":"","titlePos":"prefix","name":"Ham Young Joo","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt054","date":"2025-03-23","shop":"휴엔비에스테틱","title":"","titlePos":"prefix","name":"Jeong Hyunju","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt055","date":"2025-03-23","shop":"Whitewitch","title":"","titlePos":"prefix","name":"Baek So Ra","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt056","date":"2025-03-23","shop":"Whitewitch","title":"","titlePos":"prefix","name":"Hwang Hae Jin","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt057","date":"2025-03-23","shop":"또또에스테틱1004","title":"","titlePos":"prefix","name":"Jung Hye Jung","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt058","date":"2025-03-23","shop":"티아뷰티랩","title":"","titlePos":"prefix","name":"Ju Hee Seo","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt059","date":"2025-03-23","shop":"ONUL Aesthetic","title":"","titlePos":"prefix","name":"Chae Huikyung","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt060","date":"2025-03-23","shop":"Clean Skin","title":"","titlePos":"prefix","name":"HA SUYEON","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt062","date":"2025-02-01","shop":"Chaeum Mi","title":"대표","titlePos":"suffix","name":"강미선","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt063","date":"2025-02-01","shop":"&Mano, Yeo Ji Hyun","title":"대표","titlePos":"suffix","name":"여지현","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt064","date":"2025-02-01","shop":"K. Mo. Medicare","title":"대표","titlePos":"suffix","name":"김현희","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt065","date":"2025-02-01","shop":"Lohana. Co Skin","title":"대표","titlePos":"suffix","name":"한이나","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt066","date":"2025-02-01","shop":"Vara Aesthetic","title":"대표","titlePos":"suffix","name":"정해연","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt068","date":"2025-02-01","shop":"Reverse, Kwon Miran","title":"대표","titlePos":"suffix","name":"권미란","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt069","date":"2025-02-01","shop":"Bless Spa, Seo Hanna","title":"대표","titlePos":"suffix","name":"서한나","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt070","date":"2025-02-01","shop":"DIV , Oh Yoon Koung","title":"대표","titlePos":"suffix","name":"오윤경","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt071","date":"2025-02-01","shop":"Jeong Eun Ji","title":"대표","titlePos":"suffix","name":"정은지","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt072","date":"2025-02-01","shop":"V derm, Choi Yoon","title":"대표","titlePos":"suffix","name":"최윤","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt073","date":"2025-02-01","shop":"Lee Hee Jin","title":"대표","titlePos":"suffix","name":"이희진","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt074","date":"2025-02-01","shop":"Han Jeong Hee","title":"대표","titlePos":"suffix","name":"한정희","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt075","date":"2025-02-01","shop":"Hangyul, Im Hye Jo","title":"대표","titlePos":"suffix","name":"임혜조","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt076","date":"2025-02-01","shop":"Kim Min Jung","title":"대표","titlePos":"suffix","name":"김민정","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt077","date":"2025-02-01","shop":"Yeon Seung Hyun","title":"대표","titlePos":"suffix","name":"연승현","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt078","date":"2025-02-01","shop":"Ezsalin, Lee Jiyoung","title":"대표","titlePos":"suffix","name":"이지영","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt079","date":"2025-02-01","shop":"Mizack, Lee Jiyoung","title":"대표","titlePos":"suffix","name":"이지영","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt080","date":"2025-02-01","shop":"Place el, Park Jiyoung","title":"대표","titlePos":"suffix","name":"박지영","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt081","date":"2025-02-01","shop":"Sien, Moon Jiwon","title":"대표","titlePos":"suffix","name":"문지원","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt082","date":"2025-02-01","shop":"Noe Eun Sol","title":"대표","titlePos":"suffix","name":"노은솔","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt083","date":"2025-02-01","shop":"Wereve, Kim Juha","title":"대표","titlePos":"suffix","name":"김주하","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt087","date":"2024-09-23","shop":"AcneSkin Lab","title":"대표","titlePos":"suffix","name":"아크네스킨랩 최소연","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt088","date":"2024-09-23","shop":"PureView Aestethic","title":"대표","titlePos":"suffix","name":"퓨어뷰 에스테틱 정은희","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt090","date":"2023-11-05","shop":"Pur:bel Aesthetic","title":"대표","titlePos":"suffix","name":"퓨어벨 에스테틱 장연우","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt091","date":"2023-11-05","shop":"Dona Aesthetic","title":"대표","titlePos":"suffix","name":"도나 에스테틱 조혜진","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt092","date":"2023-11-05","shop":"12 boutique Skin","title":"대표","titlePos":"suffix","name":"일리부티크 스킨 배장미","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt093","date":"2023-11-05","shop":"Labelle Aesthetic","title":"대표","titlePos":"suffix","name":"라벨르 에스테틱 박인영","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt094","date":"2023-11-05","shop":"Lereve Skincare","title":"대표","titlePos":"suffix","name":"르헤브 스킨케어 사현지","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt095","date":"2023-11-05","shop":"Pur:bel Aesthetic","title":"대표","titlePos":"suffix","name":"퓨어벨 에스테틱 장연우","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt096","date":"2023-11-05","shop":"Dona Aesthetic","title":"대표","titlePos":"suffix","name":"도나 에스테틱 조혜진","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt097","date":"2023-11-05","shop":"12 boutique Skin","title":"대표","titlePos":"suffix","name":"일리부티크 스킨 배장미","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt098","date":"2023-11-05","shop":"Labelle Aesthetic","title":"대표","titlePos":"suffix","name":"라벨르 에스테틱 박인영","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt099","date":"2023-11-05","shop":"Lereve Skincare","title":"대표","titlePos":"suffix","name":"르헤브 스킨케어 사현지","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt103","date":"2023-11-04","shop":"Skin Smith Aesthetic","title":"대표","titlePos":"suffix","name":"스킨스미스 김정아","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt104","date":"2023-11-04","shop":"Renuvo Aesthetic","title":"대표","titlePos":"suffix","name":"르누보 권희정","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt105","date":"2023-11-04","shop":"Arteluz Aesthetic","title":"대표","titlePos":"suffix","name":"아르떼루즈 박수진","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt113","date":"2023-10-23","shop":"Skin Smith","title":"대표","titlePos":"suffix","name":"스킨스미스 김정아","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt114","date":"2023-10-23","shop":"Renuvo Aesthetic","title":"대표","titlePos":"suffix","name":"르누보 에스테틱 권희정","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt115","date":"2023-10-23","shop":"Arteluz Aesthetic","title":"대표","titlePos":"suffix","name":"아르떼루즈 박수진","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt108","date":"2023-10-22","shop":"Mare Skin Aesthetic","title":"대표","titlePos":"suffix","name":"마레스킨 에스테틱 이도겸","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt109","date":"2023-10-22","shop":"Youn Beautyroom","title":"대표","titlePos":"suffix","name":"예쁠연 뷰티룸 최소연","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt110","date":"2023-10-22","shop":"Tomorrow Top Aesthetic","title":"대표","titlePos":"suffix","name":"신은미","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt111","date":"2023-10-22","shop":"Mimong Aesthetic","title":"대표","titlePos":"suffix","name":"미몽 에스테틱 황선화","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt112","date":"2023-10-22","shop":"Kelly Beauty Co","title":"대표","titlePos":"suffix","name":"켈리뷰티코 송민지","course":"","signer":"drbae","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt117","date":"2023-10-19","shop":"Yulha Aesthetic","title":"대표","titlePos":"suffix","name":"율하에스테틱 안규미","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt118","date":"2023-10-19","shop":"Vere Aesthetic","title":"대표","titlePos":"suffix","name":"뷔에르 김은지","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt119","date":"2023-10-19","shop":"Ohrosi Aesthetic","title":"대표","titlePos":"suffix","name":"오롯이 에스테틱 김이현","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt120","date":"2023-10-19","shop":"Skinfit Aesthetic","title":"대표","titlePos":"suffix","name":"스킨핏 에스테틱 이혜연","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt122","date":"2023-10-15","shop":"Cclim Aesthetic","title":"대표","titlePos":"suffix","name":"끌림에스테틱 이은아","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt123","date":"2023-10-15","shop":"Ifiond Skin","title":"대표","titlePos":"suffix","name":"이피온드 이예성","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt124","date":"2023-10-15","shop":"Triver Aesthetic","title":"대표","titlePos":"suffix","name":"트리버에스테틱 이채하","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt125","date":"2023-10-15","shop":"Black Sugar","title":"대표","titlePos":"suffix","name":"블랙슈가 임하정","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt127","date":"2023-10-13","shop":"Salon de Cozy","title":"대표","titlePos":"suffix","name":"살롱드코지 용윤서","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt128","date":"2023-10-13","shop":"Bskin Aestetic","title":"대표","titlePos":"suffix","name":"비스킨랩 이다은","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt129","date":"2023-10-11","shop":"Mielle Aesthetic","title":"대표","titlePos":"suffix","name":"미엘르 에스테틱 이태양","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt130","date":"2023-10-11","shop":"Iwony Aesthetic","title":"대표","titlePos":"suffix","name":"아이워니 에스테틱 김서원","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt131","date":"2023-10-11","shop":"Iwony Aesthetic","title":"대표","titlePos":"suffix","name":"디오아르 에스테틱 권소영","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt133","date":"2023-09-20","shop":"Jay Unnie","title":"대표","titlePos":"suffix","name":"제이언니 서지혜","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt135","date":"2023-09-20","shop":"Some Beauty","title":"대표","titlePos":"suffix","name":"솜이뷰티 김수현","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt136","date":"2023-09-15","shop":"Onjeon Me Time","title":"대표","titlePos":"suffix","name":"온전미타임 손혜진","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt137","date":"2023-09-15","shop":"Foresthe","title":"대표","titlePos":"suffix","name":"포레스떼 주진선","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt138","date":"2023-09-10","shop":"Moodling","title":"대표","titlePos":"suffix","name":"무들링 이경연","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt139","date":"2023-09-10","shop":"Habrere","title":"대표","titlePos":"suffix","name":"김지수","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt140","date":"2023-09-10","shop":"Skin Museum","title":"대표","titlePos":"suffix","name":"스킨뮤지엄 박경민","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt141","date":"2023-09-10","shop":"Breheal","title":"대표","titlePos":"suffix","name":"브레일 김보민","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt142","date":"2023-08-24","shop":"SPA The Person","title":"대표","titlePos":"suffix","name":"스파더펄슨 오유림","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt143","date":"2023-08-09","shop":"LohanacoSkin","title":"","titlePos":"prefix","name":"로하나코스킨 (대표: 한이나)","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"},{"id":"ppt144","date":"2023-08-09","shop":"LohanacoSkin","title":"","titlePos":"prefix","name":"로하나코스킨 (대표: 한이나)","course":"","signer":"baelab","signName":"","signTitle":"","override":"","issued":true,"note":"기존 PPT 이관"}];
-if(RECORDS===null){ RECORDS = SEED.slice(); save(K_REC,RECORDS); save(K_SEED,1); }
+let DELETED = load(K_DEL,[]);          // 삭제 묘비 — 병합 때 되살아나지 않게
+let REMOTE_SHA = null;                 // records.json 의 현재 blob sha
+let TOKEN = (()=>{ try{ return localStorage.getItem(K_TOKEN)||''; }catch(e){ return ''; } })();
+
+/* ═══════════ GitHub 동기화 ═══════════
+   records.json 한 파일이 원본. 모든 기기가 이걸 읽고, 토큰이 있는 기기가 쓴다. */
+const SY = { state:'idle', msg:'', at:null };   // idle|pulling|pushing|ok|readonly|error
+
+function b64enc(s){ const b=new TextEncoder().encode(s); let x=''; b.forEach(c=>x+=String.fromCharCode(c)); return btoa(x); }
+function b64dec(b){ const bin=atob(String(b).replace(/\s/g,'')); return new TextDecoder().decode(Uint8Array.from(bin,c=>c.charCodeAt(0))); }
+function ghHeaders(){
+  const hh={'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
+  if(TOKEN) hh.Authorization='Bearer '+TOKEN;
+  return hh;
+}
+const ghUrl = ()=>'https://api.github.com/repos/'+GH.owner+'/'+GH.repo+'/contents/'+GH.path;
+
+function setSync(state,msg){
+  SY.state=state; SY.msg=msg||''; if(state==='ok') SY.at=new Date();
+  const el=$('#syncChip'); if(!el) return;
+  const label={idle:'대기',pulling:'불러오는 중…',pushing:'저장 중…',ok:'동기화됨',readonly:'읽기 전용',error:'동기화 실패'}[state]||state;
+  const dot={idle:'#9aa3ad',pulling:'#1f6feb',pushing:'#1f6feb',ok:'#0f8f52',readonly:'#b45309',error:'#c0322b'}[state];
+  const time = SY.at ? ' · '+SY.at.toTimeString().slice(0,5) : '';
+  el.innerHTML='<i style="background:'+dot+'"></i>'+label+(state==='ok'?time:'');
+  el.title = msg || (state==='readonly' ? '토큰이 없어 이 기기에서는 저장되지 않습니다. 설정 탭에서 등록하세요.' : label);
+}
+
+/* 원격 → 로컬. 로컬에만 있는 변경은 보존하고 병합한다. */
+async function pull(quiet){
+  if(!quiet) setSync('pulling');
+  try{
+    const res = await fetch(ghUrl()+'?ref='+GH.branch+'&t='+Date.now(), {headers:ghHeaders(), cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const j = await res.json();
+    REMOTE_SHA = j.sha;
+    const doc = JSON.parse(b64dec(j.content));
+    const remote = Array.isArray(doc) ? doc : (doc.records||[]);
+    RECORDS = merge(remote, RECORDS);
+    save(K_REC,RECORDS);
+    setSync(TOKEN?'ok':'readonly');
+    renderList(); storeInfo();
+    return true;
+  }catch(e){
+    setSync('error','불러오기 실패: '+e.message+' — 이 기기에 저장된 사본을 보여줍니다');
+    renderList();
+    return false;
+  }
+}
+
+/* 원격을 바탕으로 로컬 변경을 얹는다. 삭제 묘비는 부활을 막는다. */
+function merge(remote, local){
+  const dead = new Set(DELETED.map(d=>d.id));
+  const out = new Map();
+  remote.forEach(r=>{ if(!dead.has(r.id)) out.set(r.id, r); });
+  local.forEach(r=>{
+    if(dead.has(r.id)) return;
+    const cur = out.get(r.id);
+    if(!cur || (r.updated||'') >= (cur.updated||'')) out.set(r.id, r);
+  });
+  return [...out.values()];
+}
+
+let pushT=null, pushPending=false;
+function queuePush(){
+  save(K_REC,RECORDS);
+  if(!TOKEN){ setSync('readonly'); return; }
+  pushPending=true; clearTimeout(pushT); pushT=setTimeout(pushNow,1200);
+}
+
+async function pushNow(retry){
+  if(!TOKEN){ setSync('readonly'); return false; }
+  setSync('pushing');
+  try{
+    if(!REMOTE_SHA) await pull(true);
+    const doc={version:1, updated:new Date().toISOString(), records:RECORDS};
+    const res = await fetch(ghUrl(), {
+      method:'PUT', headers:Object.assign({'Content-Type':'application/json'},ghHeaders()),
+      body: JSON.stringify({
+        message:'명단 갱신 — '+RECORDS.length+'건',
+        content: b64enc(JSON.stringify(doc,null,1)),
+        sha: REMOTE_SHA, branch: GH.branch })
+    });
+    if(res.status===409 || res.status===422){
+      if(retry) throw new Error('충돌이 계속됩니다');
+      await pull(true);              // 다른 기기가 먼저 썼다 → 병합 후 한 번 더
+      return pushNow(true);
+    }
+    if(!res.ok){
+      const j=await res.json().catch(()=>({}));
+      throw new Error((j.message||('HTTP '+res.status)));
+    }
+    const j=await res.json();
+    REMOTE_SHA=j.content.sha;
+    pushPending=false;
+    DELETED = DELETED.filter(d=>Date.now()-d.at < 30*864e5);  // 묘비 30일 후 정리
+    save(K_DEL,DELETED);
+    setSync('ok');
+    return true;
+  }catch(e){
+    setSync('error','저장 실패: '+e.message);
+    return false;
+  }
+}
+
+function setToken(t){
+  TOKEN=(t||'').trim();
+  try{ TOKEN ? localStorage.setItem(K_TOKEN,TOKEN) : localStorage.removeItem(K_TOKEN); }catch(e){}
+  $('#tokState').textContent = TOKEN ? '등록됨 (이 브라우저에만 저장)' : '없음 — 이 기기는 읽기 전용';
+  $('#tokInput').value='';
+  setSync(TOKEN?'ok':'readonly');
+}
 
 /* ───────── 유틸 ───────── */
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -657,9 +812,10 @@ function renderList(){
 }
 
 function upsert(r){
+  r.updated=new Date().toISOString();
   const i=RECORDS.findIndex(x=>x.id===r.id);
   if(i>=0) RECORDS[i]=r; else RECORDS.unshift(r);
-  save(K_REC,RECORDS); renderList();
+  renderList(); queuePush();
 }
 
 /* ═══════════ 모달 ═══════════ */
@@ -815,7 +971,9 @@ $('#tbody').addEventListener('click',e=>{
   }
   if(act==='del'){
     if(!confirm('“'+(r.shop||'')+' / '+personLine(r)+'” 기록을 삭제할까요?')) return;
-    RECORDS=RECORDS.filter(x=>x.id!==r.id); selected.delete(r.id); save(K_REC,RECORDS); renderList(); toast('삭제했습니다');
+    RECORDS=RECORDS.filter(x=>x.id!==r.id); selected.delete(r.id);
+    DELETED.push({id:r.id,at:Date.now()}); save(K_DEL,DELETED);
+    renderList(); queuePush(); toast('삭제했습니다');
   }
 });
 $('#btnPrintSel').addEventListener('click',()=>{
@@ -847,7 +1005,8 @@ $('#importFile').addEventListener('change',e=>{
         RECORDS=inc.map(r=>Object.assign({id:uid()},r)); toast('기록을 교체했습니다');
       }
       if(d.settings){ SET=Object.assign({},DEFAULTS,d.settings); save(K_SET,SET); CAL.forEach(k=>{$('#c-'+k).value=SET[k];$('#n-'+k).value=SET[k];}); }
-      save(K_REC,RECORDS); renderList(); storeInfo(); renderPreview();
+      RECORDS.forEach(x=>{ if(!x.updated) x.updated=new Date().toISOString(); });
+      renderList(); storeInfo(); renderPreview(); queuePush();
     }catch(err){ toast('백업 파일을 읽을 수 없습니다'); }
     e.target.value='';
   };
@@ -856,7 +1015,8 @@ $('#importFile').addEventListener('change',e=>{
 $('#btnWipe').addEventListener('click',()=>{
   if(!confirm('저장된 '+RECORDS.length+'건의 기록을 모두 삭제합니다.\n되돌릴 수 없습니다. 먼저 백업했나요?')) return;
   if(!confirm('정말 전체 삭제할까요?')) return;
-  RECORDS=[]; selected.clear(); save(K_REC,RECORDS); renderList(); storeInfo(); toast('전체 삭제했습니다');
+  RECORDS.forEach(r=>DELETED.push({id:r.id,at:Date.now()})); save(K_DEL,DELETED);
+  RECORDS=[]; selected.clear(); renderList(); storeInfo(); queuePush(); toast('전체 삭제했습니다');
 });
 
 // 모달
@@ -884,6 +1044,17 @@ $('#bgFile').addEventListener('change',e=>{
 });
 $('#btnBgClear').addEventListener('click',()=>{ SET.bg=''; $('#bgFile').value=''; save(K_SET,SET); renderPreview(); storeInfo(); toast('기본 디자인으로 되돌렸습니다'); });
 
+// 동기화
+$('#syncChip').addEventListener('click',()=>{ pull(); if(pushPending) pushNow(); });
+$('#tokSave').addEventListener('click',()=>{
+  const v=$('#tokInput').value.trim();
+  if(!v){ toast('토큰을 붙여넣으세요'); return; }
+  setToken(v); toast('토큰을 등록했습니다'); pushNow();
+});
+$('#tokClear').addEventListener('click',()=>{ setToken(''); toast('토큰을 삭제했습니다'); });
+$('#btnPullNow').addEventListener('click',()=>pull());
+$('#btnPushNow').addEventListener('click',()=>{ if(!TOKEN){ toast('먼저 토큰을 등록하세요'); return; } pushNow(); });
+
 // 단축키
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape') closeModal();
@@ -895,7 +1066,11 @@ bindCalib();
 resetForm();
 applyZoom();
 fitZoom();
-renderList();
+renderList();                       // 캐시부터 즉시 표시
+$('#tokState').textContent = TOKEN ? '등록됨 (이 브라우저에만 저장)' : '없음 — 이 기기는 읽기 전용';
+setSync(TOKEN?'idle':'readonly');
+pull();                             // 그 다음 원격을 받아 덮어씀
+window.addEventListener('online', ()=>pull(true));
 </script>
 </body>
 </html>

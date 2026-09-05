@@ -84,7 +84,8 @@ details.adv .inner{padding-top:14px}
   position:relative;width:297mm;height:210mm;background:#fff;overflow:hidden;
   box-shadow:0 3px 18px rgba(0,0,0,.16);
 }
-.sheet .paper-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.85}
+.sheet .paper-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;opacity:.9}
+.sheet .paper-bg.print-bg{opacity:1}
 .sheet .guides{position:absolute;inset:0;pointer-events:none}
 .sheet .guides i{position:absolute;border:1px dashed rgba(31,111,235,.45);background:rgba(31,111,235,.04);display:block}
 .sheet .fld{position:absolute;white-space:pre;line-height:1.2}
@@ -142,12 +143,13 @@ td.c,th.c{text-align:center}
 #printArea{display:none}
 @page{size:A4 landscape;margin:0}
 @media print{
-  html,body{background:#fff;margin:0;padding:0}
+  html,body{background:#fff;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   body>*{display:none !important}
   #printArea{display:block !important}
   #printArea .sheet{box-shadow:none;margin:0;break-after:page;page-break-after:always}
   #printArea .sheet:last-child{break-after:auto;page-break-after:auto}
-  #printArea .paper-bg,#printArea .guides{display:none !important}
+  /* 배경은 '용지 모드 = 전체 인쇄'(.print-bg) 일 때만 나간다 */
+  #printArea .paper-bg:not(.print-bg),#printArea .guides{display:none !important}
 }
 </style>
 </head>
@@ -246,7 +248,11 @@ td.c,th.c{text-align:center}
   <div class="panel">
     <div class="preview-head">
       <h2>A4 가로 미리보기</h2>
-      <label class="chk" style="font-size:12px"><input type="checkbox" id="showGuides" checked> 위치 가이드</label>
+      <select id="paperMode" style="width:auto;padding:5px 9px;font-size:12px">
+        <option value="preprinted">수료증 용지에 인쇄 (글자만)</option>
+        <option value="full">일반 A4에 전체 인쇄 (배경 포함)</option>
+      </select>
+      <label class="chk" style="font-size:12px"><input type="checkbox" id="showGuides"> 위치 가이드</label>
       <div class="zoom">
         <span>배율</span>
         <input type="range" id="zoom" min="30" max="130" value="62" style="width:110px">
@@ -328,6 +334,12 @@ td.c,th.c{text-align:center}
       <div class="calib">
         <label>전체 X</label><input type="range" id="c-ox" min="-15" max="15" step="0.5"><input class="num" id="n-ox" type="text">
         <label>전체 Y</label><input type="range" id="c-oy" min="-15" max="15" step="0.5"><input class="num" id="n-oy" type="text">
+        <label>날짜만 X</label><input type="range" id="c-dx" min="-30" max="15" step="0.5"><input class="num" id="n-dx" type="text">
+        <label>날짜만 Y</label><input type="range" id="c-dy" min="-30" max="15" step="0.5"><input class="num" id="n-dy" type="text">
+      </div>
+      <div class="hint" style="font-size:11px;color:var(--muted);margin-top:8px">
+        PPT 원본 위치 그대로면 <b>Date 2026.08.13</b> 의 끝이 밀랍 인장과 약 5mm 겹칩니다.
+        기본 디자인 용지를 쓰신다면 <b>날짜만 X 를 −8</b> 정도로 두시면 깔끔하게 비켜갑니다.
       </div>
       <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
       <div class="calib">
@@ -351,14 +363,26 @@ td.c,th.c{text-align:center}
   </div>
 
   <div class="panel">
-    <h2>미리보기 배경</h2>
+    <h2>용지 / 배경</h2>
     <div class="body">
-      <p style="margin-top:0;color:var(--muted);font-size:12px">
-        수료증 용지를 스캔·촬영해 올려두면 화면에서 위치를 눈으로 맞출 수 있습니다.
-        <b>인쇄에는 절대 포함되지 않습니다.</b>
+      <div class="field">
+        <label for="c-paper">용지 모드</label>
+        <select id="c-paper">
+          <option value="preprinted">수료증 용지에 인쇄 — 글자만 나감</option>
+          <option value="full">일반 A4에 전체 인쇄 — 배경 디자인까지 나감</option>
+        </select>
+        <div class="hint">
+          배경이 인쇄된 수료증 용지를 쓰실 때는 <b>글자만</b>, 용지가 떨어졌을 때 일반 A4에
+          급히 뽑으려면 <b>전체 인쇄</b>를 고르세요. 화면 미리보기에는 어느 쪽이든 배경이 보입니다.
+        </div>
+      </div>
+      <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+      <p style="margin:0 0 10px;color:var(--muted);font-size:12px">
+        기본 배경은 PPT 1페이지의 <b>SF-MicroJection</b> 디자인입니다.
+        다른 디자인 용지를 쓰신다면 스캔·촬영해 올려서 교체하세요.
       </p>
       <input type="file" id="bgFile" accept="image/*" style="margin-bottom:10px">
-      <div class="actions" style="margin-top:6px"><button class="btn" id="btnBgClear">배경 지우기</button></div>
+      <div class="actions" style="margin-top:6px"><button class="btn" id="btnBgClear">기본 디자인으로 되돌리기</button></div>
     </div>
   </div>
 
@@ -436,10 +460,16 @@ const SIGNERS = {
   drbae : { name:'Dr. Bae Won-Gyu', title:'의공학 박사: 배원규 교수' },
   baelab: { name:'Dr. Bae Won-Gyu', title:'주식회사 배랩 (대표: 배원규)' }
 };
+/* 배경 디자인: PPT 슬라이드 1의 image1.png (rot 270°) 을 가로로 돌려 저장한 것.
+   슬라이드상 배치가 295.5 x 210 mm 가운데 정렬이라 그대로 297 x 210 캔버스에 앉혔다. */
+const BG_BUILTIN = 'certificate-bg.png';
 const DEFAULTS = {
-  ox:0, oy:0, shopSize:28, personSize:11, signSize:28, dateSize:20,
-  underline:true, datefmt:'Date YYYY.MM.DD', bg:''
+  ox:0, oy:0, dx:0, dy:0, shopSize:28, personSize:11, signSize:28, dateSize:20,
+  underline:true, datefmt:'Date YYYY.MM.DD', bg:'',
+  paper:'preprinted'   // preprinted = 배경 인쇄 안 함 / full = 배경까지 인쇄
 };
+// 화면 미리보기에 쓸 배경 (사용자 업로드본이 있으면 그것을, 없으면 기본 디자인)
+function bgSrc(){ return SET.bg || BG_BUILTIN; }
 
 const K_REC='drbae_cert_records_v1', K_SET='drbae_cert_settings_v1', K_SEED='drbae_cert_seeded_v1';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
@@ -495,10 +525,12 @@ function sheetHTML(r,opts){
       + '<i style="left:'+(LAYOUT.person.cx+S.ox-25)+'mm;top:'+(LAYOUT.person.y+S.oy-1.3)+'mm;width:50mm;height:7.3mm"></i>'
       + '<i style="left:'+(LAYOUT.signName.x+S.ox-2.5)+'mm;top:'+(LAYOUT.signName.y+S.oy-1.3)+'mm;width:71mm;height:14.5mm"></i>'
       + '<i style="left:'+(LAYOUT.signTitle.x+S.ox-2.5)+'mm;top:'+(LAYOUT.signTitle.y+S.oy-1.3)+'mm;width:47mm;height:7.3mm"></i>'
-      + '<i style="left:'+(LAYOUT.date.x+S.ox-2.5)+'mm;top:'+(LAYOUT.date.y+S.oy-1.3)+'mm;width:48mm;height:11.1mm"></i>'
+      + '<i style="left:'+(LAYOUT.date.x+S.ox+S.dx-2.5)+'mm;top:'+(LAYOUT.date.y+S.oy+S.dy-1.3)+'mm;width:48mm;height:11.1mm"></i>'
       + '</div>' : '';
 
-  const bg = (opts.bg && S.bg) ? '<img class="paper-bg" src="'+S.bg+'" alt="">' : '';
+  // 화면: 항상 배경을 깔아 위치를 눈으로 확인 / 인쇄: 용지 모드가 full 일 때만
+  const showBg = opts.bg ? true : (S.paper==='full');
+  const bg = showBg ? '<img class="'+(opts.bg?'paper-bg':'paper-bg print-bg')+'" src="'+esc(bgSrc())+'" alt="">' : '';
 
   let right;
   if((r.override||'').trim()){
@@ -512,7 +544,7 @@ function sheetHTML(r,opts){
     + box(LAYOUT.shop,   S.shopSize,   'f-script', r.shop, ul)
     + box(LAYOUT.person, S.personSize, 'f-sans',   personLine(r))
     + right
-    + box(LAYOUT.date,   S.dateSize,   'f-script', fmtDate(r.date))
+    + box({x:LAYOUT.date.x+S.dx, y:LAYOUT.date.y+S.dy, align:'left'}, S.dateSize, 'f-script', fmtDate(r.date))
     + '</div>';
 }
 
@@ -649,7 +681,7 @@ function openModal(r){
 function closeModal(){ $('#modal').classList.remove('on'); modalId=null; }
 
 /* ═══════════ 설정 ═══════════ */
-const CAL=['ox','oy','shopSize','personSize','signSize','dateSize'];
+const CAL=['ox','oy','dx','dy','shopSize','personSize','signSize','dateSize'];
 function bindCalib(){
   CAL.forEach(k=>{
     const rng=$('#c-'+k), num=$('#n-'+k);
@@ -662,8 +694,17 @@ function bindCalib(){
   $('#c-underline').addEventListener('change',e=>{ SET.underline=e.target.checked; save(K_SET,SET); renderPreview(); });
   $('#c-datefmt').value=SET.datefmt;
   $('#c-datefmt').addEventListener('change',e=>{ SET.datefmt=e.target.value; save(K_SET,SET); renderPreview(); renderList(); });
+  // 용지 모드 — 발급 탭과 설정 탭 두 곳의 select 를 항상 같은 값으로 유지
+  function setPaper(v){
+    SET.paper=v; save(K_SET,SET);
+    $('#c-paper').value=v; $('#paperMode').value=v;
+    renderPreview();
+  }
+  setPaper(SET.paper);
+  $('#c-paper').addEventListener('change',e=>setPaper(e.target.value));
+  $('#paperMode').addEventListener('change',e=>setPaper(e.target.value));
   $('#btnResetCalib').addEventListener('click',()=>{
-    Object.assign(SET,DEFAULTS,{bg:SET.bg}); save(K_SET,SET);
+    Object.assign(SET,DEFAULTS,{bg:SET.bg,paper:SET.paper}); save(K_SET,SET);
     CAL.forEach(k=>{ $('#c-'+k).value=SET[k]; $('#n-'+k).value=SET[k]; });
     $('#c-underline').checked=SET.underline; $('#c-datefmt').value=SET.datefmt;
     renderPreview(); toast('기본값으로 되돌렸습니다');
@@ -672,7 +713,8 @@ function bindCalib(){
 }
 function storeInfo(){
   const bytes=new Blob([localStorage.getItem(K_REC)||'']).size;
-  $('#storeInfo').textContent='기록 '+RECORDS.length+'건 · 약 '+(bytes/1024).toFixed(1)+' KB 사용 중'+(SET.bg?' · 배경 이미지 저장됨':'');
+  $('#storeInfo').textContent='기록 '+RECORDS.length+'건 · 약 '+(bytes/1024).toFixed(1)+' KB 사용 중 · 배경 '
+    +(SET.bg?'사용자 업로드본':'기본 디자인(SF-MicroJection)');
 }
 
 /* ═══════════ 내보내기 / 복원 ═══════════ */
@@ -840,7 +882,7 @@ $('#bgFile').addEventListener('change',e=>{
   fr.onload=()=>{ SET.bg=fr.result; save(K_SET,SET); renderPreview(); storeInfo(); toast('미리보기 배경을 설정했습니다'); };
   fr.readAsDataURL(f);
 });
-$('#btnBgClear').addEventListener('click',()=>{ SET.bg=''; save(K_SET,SET); renderPreview(); storeInfo(); toast('배경을 지웠습니다'); });
+$('#btnBgClear').addEventListener('click',()=>{ SET.bg=''; $('#bgFile').value=''; save(K_SET,SET); renderPreview(); storeInfo(); toast('기본 디자인으로 되돌렸습니다'); });
 
 // 단축키
 document.addEventListener('keydown',e=>{

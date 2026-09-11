@@ -563,6 +563,10 @@ async function pull(quiet){
     REMOTE_SHA = j.sha;
     const doc = JSON.parse(b64dec(j.content));
     const remote = Array.isArray(doc) ? doc : (doc.records||[]);
+    // 원격 묘비 흡수 — 다른 기기에서 지운 것도 여기서 되살아나지 않게
+    const known = new Set(DELETED.map(d=>d.id));
+    (doc.deleted||[]).forEach(d=>{ if(!known.has(d.id)){ DELETED.push(d); known.add(d.id); } });
+    save(K_DEL,DELETED);
     RECORDS = merge(remote, RECORDS);
     save(K_REC,RECORDS);
     setSync(TOKEN?'ok':'readonly');
@@ -600,7 +604,7 @@ async function pushNow(retry){
   setSync('pushing');
   try{
     if(!REMOTE_SHA) await pull(true);
-    const doc={version:1, updated:new Date().toISOString(), records:RECORDS};
+    const doc={version:1, updated:new Date().toISOString(), records:RECORDS, deleted:DELETED};
     const res = await fetch(ghUrl(), {
       method:'PUT', headers:Object.assign({'Content-Type':'application/json'},ghHeaders()),
       body: JSON.stringify({
@@ -620,7 +624,7 @@ async function pushNow(retry){
     const j=await res.json();
     REMOTE_SHA=j.content.sha;
     pushPending=false;
-    DELETED = DELETED.filter(d=>Date.now()-d.at < 30*864e5);  // 묘비 30일 후 정리
+    DELETED = DELETED.filter(d=>Date.now()-d.at < 180*864e5); // 묘비 180일 보존
     save(K_DEL,DELETED);
     setSync('ok');
     return true;

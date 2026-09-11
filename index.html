@@ -532,6 +532,7 @@ let TOKEN = (()=>{ try{ return localStorage.getItem(K_TOKEN)||''; }catch(e){ ret
 
 /* ═══════════ GitHub 동기화 ═══════════
    records.json 한 파일이 원본. 모든 기기가 이걸 읽고, 토큰이 있는 기기가 쓴다. */
+const BUILD='20260911-083258';   // 배포 스탬프 — 캐시된 옛 버전을 잡아내는 기준
 const SY = { state:'idle', msg:'', at:null };   // idle|pulling|pushing|ok|readonly|error
 
 function b64enc(s){ const b=new TextEncoder().encode(s); let x=''; b.forEach(c=>x+=String.fromCharCode(c)); return btoa(x); }
@@ -1048,8 +1049,22 @@ $('#bgFile').addEventListener('change',e=>{
 });
 $('#btnBgClear').addEventListener('click',()=>{ SET.bg=''; $('#bgFile').value=''; save(K_SET,SET); renderPreview(); storeInfo(); toast('기본 디자인으로 되돌렸습니다'); });
 
+/* GitHub Pages 는 index.html 을 10분쯤 캐시한다. 옛 버전이 돌면 기기마다
+   내용이 어긋나므로, 서버 쪽 스탬프가 다르면 한 번만 새로고침한다. */
+async function checkUpdate(){
+  try{
+    const t = await (await fetch('index.html?v='+Date.now(),{cache:'no-store'})).text();
+    const m = t.match(/const BUILD='([^']+)'/);
+    if(m && m[1]!==BUILD){
+      if(sessionStorage.getItem('drbae_reloaded')===m[1]) return;   // 반복 새로고침 방지
+      sessionStorage.setItem('drbae_reloaded', m[1]);
+      toast('새 버전으로 갱신합니다'); setTimeout(()=>location.reload(),600);
+    }
+  }catch(e){}
+}
+
 // 동기화
-$('#syncChip').addEventListener('click',()=>{ pull(); if(pushPending) pushNow(); });
+$('#syncChip').addEventListener('click',()=>{ pull(); if(pushPending) pushNow(); checkUpdate(); });
 $('#tokSave').addEventListener('click',()=>{
   const v=$('#tokInput').value.trim();
   if(!v){ toast('토큰을 붙여넣으세요'); return; }
@@ -1074,6 +1089,7 @@ renderList();                       // 캐시부터 즉시 표시
 $('#tokState').textContent = TOKEN ? '등록됨 (이 브라우저에만 저장)' : '없음 — 이 기기는 읽기 전용';
 setSync(TOKEN?'idle':'readonly');
 pull();                             // 그 다음 원격을 받아 덮어씀
+checkUpdate();                      // 캐시된 옛 버전이면 한 번 새로고침
 window.addEventListener('online', ()=>pull(true));
 </script>
 </body>

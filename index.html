@@ -346,6 +346,7 @@ td.c,th.c{text-align:center}
       </div>
       <div class="actions">
         <button class="btn primary" id="btnLogin">Google 로그인</button>
+        <button class="btn" id="btnLoginRedirect" title="팝업이 막히는 브라우저(웨일 등)용 — 같은 탭에서 구글 로그인 후 돌아옵니다">팝업 없이 로그인</button>
         <button class="btn" id="btnLogout">로그아웃</button>
       </div>
       <div class="actions">
@@ -534,7 +535,7 @@ let SYNCED = load(K_SYNCED, {});          // 마지막으로 서버와 맞춘 �
 
 /* ═══════════ GitHub 동기화 ═══════════
    records.json 한 파일이 원본. 모든 기기가 이걸 읽고, 토큰이 있는 기기가 쓴다. */
-const BUILD='20260913-200000';   // 배포 스탬프 — 캐시된 옛 버전을 잡아내는 기준
+const BUILD='20260913-201500';   // 배포 스탬프 — 캐시된 옛 버전을 잡아내는 기준
 const SY = { state:'idle', msg:'', at:null };   // idle|pulling|pushing|ok|readonly|error
 
 function b64enc(s){ const b=new TextEncoder().encode(s); let x=''; b.forEach(c=>x+=String.fromCharCode(c)); return btoa(x); }
@@ -630,7 +631,7 @@ async function pushNow(){
 
 function setAuthUI(){
   const st=$('#tokState'); if(st) st.textContent = AUTH_OK ? ('로그인됨 — '+AUTH_EMAIL+' (이 기기에서 저장 가능)') : '로그인 안 됨 — 이 기기는 읽기 전용 (발급하면 이 브라우저에만 임시 저장)';
-  const li=$('#btnLogin'), lo=$('#btnLogout'); if(li) li.style.display=AUTH_OK?'none':''; if(lo) lo.style.display=AUTH_OK?'':'none';
+  const li=$('#btnLogin'), lr=$('#btnLoginRedirect'), lo=$('#btnLogout'); if(li) li.style.display=AUTH_OK?'none':''; if(lr) lr.style.display=AUTH_OK?'none':''; if(lo) lo.style.display=AUTH_OK?'':'none';
   const bn=$('#authBanner'); if(bn) bn.style.display=AUTH_OK?'none':'';
 }
 fauth.onAuthStateChanged(u=>{
@@ -1061,10 +1062,16 @@ async function checkUpdate(){
 // 동기화
 $('#syncChip').addEventListener('click',()=>{ if(!AUTH_OK){ toast('설정 탭에서 Google 로그인하세요'); return; } pull(); if(pushPending) pushNow(); checkUpdate(); });
 $('#authBanner').addEventListener('click',()=>{ const b=$$('.tab').find(x=>x.dataset.view==='settings'); if(b) b.click(); });
+function googleProvider(){ const p=new firebase.auth.GoogleAuthProvider(); p.setCustomParameters({prompt:'select_account'}); return p; }
 $('#btnLogin').addEventListener('click',()=>{
-  const p=new firebase.auth.GoogleAuthProvider(); p.setCustomParameters({prompt:'select_account'});
-  fauth.signInWithPopup(p).catch(e=>toast('로그인 실패: '+(e&&e.message||e)));
+  // 팝업이 막히거나(웨일 등) 새 탭으로 튀는 브라우저는 같은 탭에서 리디렉션 방식으로
+  fauth.signInWithPopup(googleProvider()).catch(e=>{
+    const c=(e&&e.code)||'';
+    if(/popup|cancelled|blocked|operation-not-supported/i.test(c)){ toast('같은 탭에서 로그인 페이지로 이동합니다'); fauth.signInWithRedirect(googleProvider()); return; }
+    toast('로그인 실패: '+(e&&e.message||e));
+  });
 });
+$('#btnLoginRedirect').addEventListener('click',()=>{ fauth.signInWithRedirect(googleProvider()); });
 $('#btnLogout').addEventListener('click',()=>fauth.signOut().then(()=>{ toast('로그아웃했습니다'); }));
 $('#btnPullNow').addEventListener('click',()=>{ if(!AUTH_OK){ toast('먼저 Google 로그인하세요'); return; } pull(); });
 $('#btnPushNow').addEventListener('click',()=>{ if(!AUTH_OK){ toast('먼저 Google 로그인하세요'); return; } pushNow(); });
@@ -1083,6 +1090,7 @@ fitZoom();
 renderList();                       // 캐시부터 즉시 표시
 setAuthUI();
 setSync('readonly');                // 로그인되면 onAuthStateChanged 가 pull() 한다
+fauth.getRedirectResult().catch(e=>{ if(e&&e.code!=='auth/no-auth-event') toast('로그인 실패: '+(e.message||e)); });
 checkUpdate();                      // 캐시된 옛 버전이면 한 번 새로고침
 window.addEventListener('online', ()=>{ if(AUTH_OK) pull(true); });
 </script>

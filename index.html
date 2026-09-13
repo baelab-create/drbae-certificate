@@ -156,12 +156,16 @@ td.c,th.c{text-align:center}
   #printArea .paper-bg:not(.print-bg),#printArea .guides{display:none !important}
 }
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
 <div class="topbar"><div class="topbar-in">
   <div class="brand">닥터배 수료증 <small>Certificate Issuer</small></div>
   <button id="syncChip" title="클릭하면 지금 동기화합니다"><i></i>대기</button>
+  <button id="authBanner" style="display:none;margin-left:8px;background:#fff3cd;color:#8a5a00;border:1px solid #f0d58c;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer" title="설정 탭으로 이동">⚠ 로그인 안 됨 — 발급해도 중앙에 저장되지 않습니다. 클릭해서 로그인</button>
   <nav class="tabs">
     <button class="tab on" data-view="issue">발급하기</button>
     <button class="tab" data-view="list">수료자 명단 <span class="cnt" id="tabCount">0</span></button>
@@ -330,38 +334,27 @@ td.c,th.c{text-align:center}
 <div class="set-grid">
 
   <div class="panel">
-    <h2>기기 간 동기화</h2>
+    <h2>중앙 저장소 (Firebase)</h2>
     <div class="body">
       <p style="margin-top:0;color:var(--muted);font-size:12px">
-        명단은 저장소의 <b>records.json</b> 한 파일에 저장됩니다.
-        <b>읽기는 토큰 없이</b> 어느 기기에서든 되고, <b>새 발급을 저장하려면</b>
-        이 기기에 개인 토큰을 한 번 등록해야 합니다.
+        명단은 배랩 Firebase(거래처 관리와 같은 곳)에 저장됩니다. <b>본사 구글 계정으로 로그인한 기기</b>에서만 읽고 쓸 수 있고,
+        어느 기기에서 발급해도 즉시 모든 기기·대시보드·발송 명세서에 반영됩니다. 토큰 등록은 더 이상 필요 없습니다.
       </p>
       <div class="field">
-        <label>이 기기의 토큰 상태</label>
+        <label>이 기기의 상태</label>
         <div id="tokState" style="padding:9px 11px;background:#fafbfc;border:1px solid var(--line);border-radius:7px;font-size:13px">확인 중…</div>
       </div>
-      <div class="field">
-        <label for="tokInput">GitHub 개인 토큰 등록</label>
-        <input type="password" id="tokInput" placeholder="github_pat_… 붙여넣기" autocomplete="off"
-               style="width:100%;padding:9px 11px;border:1px solid var(--line2);border-radius:7px">
-        <div class="hint">
-          <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">토큰 만들기</a> →
-          Repository access 는 <b>drbae-certificate</b> 만, Permissions 는 <b>Contents: Read and write</b> 하나만 주세요.
-          입력한 토큰은 이 브라우저에만 저장되고 어디에도 전송되지 않습니다.
-        </div>
-      </div>
       <div class="actions">
-        <button class="btn primary" id="tokSave">토큰 저장</button>
-        <button class="btn" id="tokClear">토큰 삭제</button>
+        <button class="btn primary" id="btnLogin">Google 로그인</button>
+        <button class="btn" id="btnLogout">로그아웃</button>
       </div>
       <div class="actions">
         <button class="btn" id="btnPullNow">지금 다시 불러오기</button>
         <button class="btn" id="btnPushNow">지금 저장하기</button>
       </div>
       <div style="margin-top:12px;font-size:11px;color:var(--muted)">
-        기록 원본: <a href="https://github.com/baelab-create/drbae-certificate/blob/main/records.json" target="_blank" rel="noopener">records.json</a>
-        · 발급할 때마다 커밋되어 변경 이력이 그대로 남습니다.
+        로그인하지 않은 상태에서 발급하면 <b>이 브라우저에만 임시 저장</b>되고, 같은 브라우저에서 로그인하는 순간 자동으로 올라갑니다.
+        (예전에 토큰 없이 발급한 기록도 그 브라우저에서 로그인하면 그대로 올라갑니다.)
       </div>
     </div>
   </div>
@@ -528,11 +521,20 @@ let RECORDS = load(K_REC,[]);          // 마지막으로 동기화된 사본 (�
 let SET     = Object.assign({},DEFAULTS,load(K_SET,{}));
 let DELETED = load(K_DEL,[]);          // 삭제 묘비 — 병합 때 되살아나지 않게
 let REMOTE_SHA = null;                 // records.json 의 현재 blob sha
-let TOKEN = (()=>{ try{ return localStorage.getItem(K_TOKEN)||''; }catch(e){ return ''; } })();
+let TOKEN = '';                        // (구) GitHub 토큰 — 더 이상 쓰지 않음
+/* ═══════════ Firebase (거래처 관리·관리대장과 같은 프로젝트) ═══════════ */
+const FB_CONFIG = { apiKey:"AIzaSyBXE4UNgFmlnfQ5TkpR6h4DIKE2rjbI0_Q", authDomain:"baelab-ledger.firebaseapp.com", projectId:"baelab-ledger",
+  storageBucket:"baelab-ledger.firebasestorage.app", messagingSenderId:"301215647344", appId:"1:301215647344:web:9026cd464a9403629516b5" };
+const OWNER_EMAILS = ['baewongyu@gmail.com'];
+firebase.initializeApp(FB_CONFIG);
+const fdb = firebase.firestore(), fauth = firebase.auth();
+let AUTH_OK = false, AUTH_EMAIL = '';
+const K_SYNCED = 'drbae_cert_synced_v1';
+let SYNCED = load(K_SYNCED, {});          // 마지막으로 서버와 맞춘 기록 id → updated (삭제·부활 판정용)
 
 /* ═══════════ GitHub 동기화 ═══════════
    records.json 한 파일이 원본. 모든 기기가 이걸 읽고, 토큰이 있는 기기가 쓴다. */
-const BUILD='20260911-083258';   // 배포 스탬프 — 캐시된 옛 버전을 잡아내는 기준
+const BUILD='20260913-200000';   // 배포 스탬프 — 캐시된 옛 버전을 잡아내는 기준
 const SY = { state:'idle', msg:'', at:null };   // idle|pulling|pushing|ok|readonly|error
 
 function b64enc(s){ const b=new TextEncoder().encode(s); let x=''; b.forEach(c=>x+=String.fromCharCode(c)); return btoa(x); }
@@ -547,31 +549,30 @@ const ghUrl = ()=>'https://api.github.com/repos/'+GH.owner+'/'+GH.repo+'/content
 function setSync(state,msg){
   SY.state=state; SY.msg=msg||''; if(state==='ok') SY.at=new Date();
   const el=$('#syncChip'); if(!el) return;
-  const label={idle:'대기',pulling:'불러오는 중…',pushing:'저장 중…',ok:'동기화됨',readonly:'읽기 전용',error:'동기화 실패'}[state]||state;
+  const label={idle:'대기',pulling:'불러오는 중…',pushing:'저장 중…',ok:'중앙 저장됨',readonly:'로그인 필요',error:'저장 실패'}[state]||state;
   const dot={idle:'#9aa3ad',pulling:'#1f6feb',pushing:'#1f6feb',ok:'#0f8f52',readonly:'#b45309',error:'#c0322b'}[state];
   const time = SY.at ? ' · '+SY.at.toTimeString().slice(0,5) : '';
   el.innerHTML='<i style="background:'+dot+'"></i>'+label+(state==='ok'?time:'');
-  el.title = msg || (state==='readonly' ? '토큰이 없어 이 기기에서는 저장되지 않습니다. 설정 탭에서 등록하세요.' : label);
+  el.title = msg || (state==='readonly' ? '로그인되지 않아 이 기기에서는 중앙 저장소에 저장되지 않습니다. 설정 탭에서 Google 로그인하세요.' : label);
 }
 
-/* 원격 → 로컬. 로컬에만 있는 변경은 보존하고 병합한다. */
+/* 원격(Firestore) → 로컬. 로컬에만 있는 새 기록은 보존해 다음 push 때 올린다. */
 async function pull(quiet){
+  if(!AUTH_OK){ setSync('readonly'); renderList(); return false; }
   if(!quiet) setSync('pulling');
   try{
-    const res = await fetch(ghUrl()+'?ref='+GH.branch+'&t='+Date.now(), {headers:ghHeaders(), cache:'no-store'});
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    const j = await res.json();
-    REMOTE_SHA = j.sha;
-    const doc = JSON.parse(b64dec(j.content));
-    const remote = Array.isArray(doc) ? doc : (doc.records||[]);
-    // 원격 묘비 흡수 — 다른 기기에서 지운 것도 여기서 되살아나지 않게
-    const known = new Set(DELETED.map(d=>d.id));
-    (doc.deleted||[]).forEach(d=>{ if(!known.has(d.id)){ DELETED.push(d); known.add(d.id); } });
-    save(K_DEL,DELETED);
+    const snap = await fdb.collection('certs').get();
+    const remote = snap.docs.map(d=>Object.assign({id:d.id}, d.data()));
+    const remoteIds = new Set(remote.map(r=>r.id));
+    // 다른 기기에서 지운 기록: 예전에 동기화됐던(SYNCED) 기록이 서버에 없으면 이 기기에서도 지운다
+    RECORDS = RECORDS.filter(r=> remoteIds.has(r.id) || !SYNCED[r.id]);
     RECORDS = merge(remote, RECORDS);
     save(K_REC,RECORDS);
-    setSync(TOKEN?'ok':'readonly');
+    const sy={}; remote.forEach(r=>sy[r.id]=r.updated||''); SYNCED=sy; save(K_SYNCED,SYNCED);
+    setSync('ok');
     renderList(); storeInfo();
+    // 이 기기에만 있던 기록(토큰 없이 발급했던 것 등)이 있으면 곧바로 올린다
+    if(RECORDS.some(r=>!(r.id in SYNCED)) || DELETED.length) queuePush();
     return true;
   }catch(e){
     setSync('error','불러오기 실패: '+e.message+' — 이 기기에 저장된 사본을 보여줍니다');
@@ -596,38 +597,30 @@ function merge(remote, local){
 let pushT=null, pushPending=false;
 function queuePush(){
   save(K_REC,RECORDS);
-  if(!TOKEN){ setSync('readonly'); return; }
+  if(!AUTH_OK){ setSync('readonly'); pushPending=true; return; }
   pushPending=true; clearTimeout(pushT); pushT=setTimeout(pushNow,1200);
 }
 
-async function pushNow(retry){
-  if(!TOKEN){ setSync('readonly'); return false; }
+async function pushNow(){
+  if(!AUTH_OK){ setSync('readonly'); return false; }
   setSync('pushing');
   try{
-    if(!REMOTE_SHA) await pull(true);
-    const doc={version:1, updated:new Date().toISOString(), records:RECORDS, deleted:DELETED};
-    const res = await fetch(ghUrl(), {
-      method:'PUT', headers:Object.assign({'Content-Type':'application/json'},ghHeaders()),
-      body: JSON.stringify({
-        message:'명단 갱신 — '+RECORDS.length+'건',
-        content: b64enc(JSON.stringify(doc,null,1)),
-        sha: REMOTE_SHA, branch: GH.branch })
-    });
-    if(res.status===409 || res.status===422){
-      if(retry) throw new Error('충돌이 계속됩니다');
-      await pull(true);              // 다른 기기가 먼저 썼다 → 병합 후 한 번 더
-      return pushNow(true);
+    const ops=[];
+    RECORDS.forEach(r=>{ if(!(r.id in SYNCED) || SYNCED[r.id]!==(r.updated||'')) ops.push({t:'set', r}); });
+    const ids=new Set(RECORDS.map(r=>r.id));
+    Object.keys(SYNCED).forEach(id=>{ if(!ids.has(id)) ops.push({t:'del', id}); });
+    DELETED.forEach(d=>{ if(!ids.has(d.id) && !ops.some(o=>o.t==='del'&&o.id===d.id)) ops.push({t:'del', id:d.id}); });
+    for(let k=0;k<ops.length;k+=400){
+      const b=fdb.batch();
+      ops.slice(k,k+400).forEach(o=>{ if(o.t==='set'){ const {id,...data}=o.r; b.set(fdb.collection('certs').doc(id), data); } else b.delete(fdb.collection('certs').doc(o.id)); });
+      await b.commit();
     }
-    if(!res.ok){
-      const j=await res.json().catch(()=>({}));
-      throw new Error((j.message||('HTTP '+res.status)));
-    }
-    const j=await res.json();
-    REMOTE_SHA=j.content.sha;
+    if(ops.length) await fdb.collection('meta').doc('certs').set({updated:new Date().toISOString(), count:RECORDS.length, by:AUTH_EMAIL}, {merge:true});
+    const sy={}; RECORDS.forEach(r=>sy[r.id]=r.updated||''); SYNCED=sy; save(K_SYNCED,SYNCED);
+    DELETED=[]; save(K_DEL,DELETED);
     pushPending=false;
-    DELETED = DELETED.filter(d=>Date.now()-d.at < 180*864e5); // 묘비 180일 보존
-    save(K_DEL,DELETED);
     setSync('ok');
+    if(ops.length) toast('중앙 저장소에 저장했습니다 ('+ops.length+'건 반영)');
     return true;
   }catch(e){
     setSync('error','저장 실패: '+e.message);
@@ -635,14 +628,15 @@ async function pushNow(retry){
   }
 }
 
-function setToken(t){
-  TOKEN=(t||'').trim();
-  try{ TOKEN ? localStorage.setItem(K_TOKEN,TOKEN) : localStorage.removeItem(K_TOKEN); }catch(e){}
-  $('#tokState').textContent = TOKEN ? '등록됨 (이 브라우저에만 저장)' : '없음 — 이 기기는 읽기 전용';
-  $('#tokInput').value='';
-  setSync(TOKEN?'ok':'readonly');
+function setAuthUI(){
+  const st=$('#tokState'); if(st) st.textContent = AUTH_OK ? ('로그인됨 — '+AUTH_EMAIL+' (이 기기에서 저장 가능)') : '로그인 안 됨 — 이 기기는 읽기 전용 (발급하면 이 브라우저에만 임시 저장)';
+  const li=$('#btnLogin'), lo=$('#btnLogout'); if(li) li.style.display=AUTH_OK?'none':''; if(lo) lo.style.display=AUTH_OK?'':'none';
+  const bn=$('#authBanner'); if(bn) bn.style.display=AUTH_OK?'none':'';
 }
-
+fauth.onAuthStateChanged(u=>{
+  if(u && OWNER_EMAILS.indexOf((u.email||'').toLowerCase())>=0){ AUTH_OK=true; AUTH_EMAIL=u.email; setAuthUI(); pull(); }
+  else { if(u){ toast('이 계정('+u.email+')은 본사 계정이 아닙니다'); fauth.signOut(); } AUTH_OK=false; AUTH_EMAIL=''; setAuthUI(); setSync('readonly'); }
+});
 /* ───────── 유틸 ───────── */
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 function esc(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -934,13 +928,14 @@ function validate(r){
   if(!r.date){ toast('수료 일자를 선택하세요'); $('#f-date').focus(); return false; }
   return true;
 }
+function authGuard(){ if(AUTH_OK) return true; return confirm('로그인되지 않았습니다.\n\n이 기록은 이 브라우저에만 임시 저장되고, 이 브라우저에서 Google 로그인하면 중앙 저장소로 올라갑니다.\n지금 저장을 계속할까요? (취소 후 설정 탭에서 로그인 권장)'); }
 $('#btnSavePrint').addEventListener('click',()=>{
-  const r=formData(); if(!validate(r)) return;
+  const r=formData(); if(!validate(r)) return; if(!authGuard()) return;
   upsert(r); printRecords([r]);
   toast(editingId?'수정 후 인쇄합니다':'명단에 저장하고 인쇄합니다'); resetForm();
 });
 $('#btnSaveOnly').addEventListener('click',()=>{
-  const r=formData(); if(!validate(r)) return;
+  const r=formData(); if(!validate(r)) return; if(!authGuard()) return;
   upsert(r); toast(editingId?'수정했습니다':'명단에 저장했습니다'); resetForm();
 });
 $('#btnPrintOnly').addEventListener('click',()=>{ const r=formData(); if(!validate(r)) return; printRecords([r]); });
@@ -1064,15 +1059,15 @@ async function checkUpdate(){
 }
 
 // 동기화
-$('#syncChip').addEventListener('click',()=>{ pull(); if(pushPending) pushNow(); checkUpdate(); });
-$('#tokSave').addEventListener('click',()=>{
-  const v=$('#tokInput').value.trim();
-  if(!v){ toast('토큰을 붙여넣으세요'); return; }
-  setToken(v); toast('토큰을 등록했습니다'); pushNow();
+$('#syncChip').addEventListener('click',()=>{ if(!AUTH_OK){ toast('설정 탭에서 Google 로그인하세요'); return; } pull(); if(pushPending) pushNow(); checkUpdate(); });
+$('#authBanner').addEventListener('click',()=>{ const b=$$('.tab').find(x=>x.dataset.view==='settings'); if(b) b.click(); });
+$('#btnLogin').addEventListener('click',()=>{
+  const p=new firebase.auth.GoogleAuthProvider(); p.setCustomParameters({prompt:'select_account'});
+  fauth.signInWithPopup(p).catch(e=>toast('로그인 실패: '+(e&&e.message||e)));
 });
-$('#tokClear').addEventListener('click',()=>{ setToken(''); toast('토큰을 삭제했습니다'); });
-$('#btnPullNow').addEventListener('click',()=>pull());
-$('#btnPushNow').addEventListener('click',()=>{ if(!TOKEN){ toast('먼저 토큰을 등록하세요'); return; } pushNow(); });
+$('#btnLogout').addEventListener('click',()=>fauth.signOut().then(()=>{ toast('로그아웃했습니다'); }));
+$('#btnPullNow').addEventListener('click',()=>{ if(!AUTH_OK){ toast('먼저 Google 로그인하세요'); return; } pull(); });
+$('#btnPushNow').addEventListener('click',()=>{ if(!AUTH_OK){ toast('먼저 Google 로그인하세요'); return; } pushNow(); });
 
 // 단축키
 document.addEventListener('keydown',e=>{
@@ -1086,11 +1081,10 @@ resetForm();
 applyZoom();
 fitZoom();
 renderList();                       // 캐시부터 즉시 표시
-$('#tokState').textContent = TOKEN ? '등록됨 (이 브라우저에만 저장)' : '없음 — 이 기기는 읽기 전용';
-setSync(TOKEN?'idle':'readonly');
-pull();                             // 그 다음 원격을 받아 덮어씀
+setAuthUI();
+setSync('readonly');                // 로그인되면 onAuthStateChanged 가 pull() 한다
 checkUpdate();                      // 캐시된 옛 버전이면 한 번 새로고침
-window.addEventListener('online', ()=>pull(true));
+window.addEventListener('online', ()=>{ if(AUTH_OK) pull(true); });
 </script>
 </body>
 </html>

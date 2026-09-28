@@ -508,10 +508,8 @@ const DEFAULTS = {
 function bgSrc(){ return SET.bg || BG_BUILTIN; }
 
 const K_REC='drbae_cert_records_v1', K_SET='drbae_cert_settings_v1';
-const K_TOKEN='drbae_cert_token_v1', K_DEL='drbae_cert_deleted_v1';
-/* GitHub 저장소를 그대로 DB 로 쓴다.
-   읽기 = 공개 저장소라 토큰 없이 어느 기기에서나 / 쓰기 = 기기마다 개인 토큰 1회 등록 */
-const GH = { owner:'baelab-create', repo:'drbae-certificate', path:'records.json', branch:'main' };
+const K_DEL='drbae_cert_deleted_v1';
+try{ localStorage.removeItem('drbae_cert_token_v1'); }catch(e){}   // 예전 GitHub 토큰 방식의 잔여 토큰 정리 (원본은 Firebase certs)
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 
 /* ───────── 저장소 ───────── */
@@ -521,8 +519,6 @@ function save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){ t
 let RECORDS = load(K_REC,[]);          // 마지막으로 동기화된 사본 (오프라인용 캐시)
 let SET     = Object.assign({},DEFAULTS,load(K_SET,{}));
 let DELETED = load(K_DEL,[]);          // 삭제 묘비 — 병합 때 되살아나지 않게
-let REMOTE_SHA = null;                 // records.json 의 현재 blob sha
-let TOKEN = '';                        // (구) GitHub 토큰 — 더 이상 쓰지 않음
 /* ═══════════ Firebase (거래처 관리·관리대장과 같은 프로젝트) ═══════════ */
 const FB_CONFIG = { apiKey:"AIzaSyBXE4UNgFmlnfQ5TkpR6h4DIKE2rjbI0_Q", authDomain:"baelab-ledger.firebaseapp.com", projectId:"baelab-ledger",
   storageBucket:"baelab-ledger.firebasestorage.app", messagingSenderId:"301215647344", appId:"1:301215647344:web:9026cd464a9403629516b5" };
@@ -533,19 +529,11 @@ let AUTH_OK = false, AUTH_EMAIL = '';
 const K_SYNCED = 'drbae_cert_synced_v1';
 let SYNCED = load(K_SYNCED, {});          // 마지막으로 서버와 맞춘 기록 id → updated (삭제·부활 판정용)
 
-/* ═══════════ GitHub 동기화 ═══════════
-   records.json 한 파일이 원본. 모든 기기가 이걸 읽고, 토큰이 있는 기기가 쓴다. */
-const BUILD='20260928-213815';   // 배포 스탬프 — 캐시된 옛 버전을 잡아내는 기준
+/* ═══════════ 중앙 저장소 동기화 (Firestore certs) ═══════════
+   원본은 Firestore certs. 본사 Google 로그인한 기기만 읽고 쓴다. 로그인 전 발급분은 이 브라우저에 임시 저장 후 로그인 시 업로드.
+   (저장소의 records.json 은 옛 포장 PC 코드용 과거 사본이며 이 화면은 읽지도 쓰지도 않는다) */
+const BUILD='20260928-233000';   // 배포 스탬프 — 캐시된 옛 버전을 잡아내는 기준
 const SY = { state:'idle', msg:'', at:null };   // idle|pulling|pushing|ok|readonly|error
-
-function b64enc(s){ const b=new TextEncoder().encode(s); let x=''; b.forEach(c=>x+=String.fromCharCode(c)); return btoa(x); }
-function b64dec(b){ const bin=atob(String(b).replace(/\s/g,'')); return new TextDecoder().decode(Uint8Array.from(bin,c=>c.charCodeAt(0))); }
-function ghHeaders(){
-  const hh={'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
-  if(TOKEN) hh.Authorization='Bearer '+TOKEN;
-  return hh;
-}
-const ghUrl = ()=>'https://api.github.com/repos/'+GH.owner+'/'+GH.repo+'/contents/'+GH.path;
 
 function setSync(state,msg){
   SY.state=state; SY.msg=msg||''; if(state==='ok') SY.at=new Date();

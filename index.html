@@ -555,13 +555,16 @@ let CAN_WRITE = false;                 // 이 세션이 저장까지 할 수 있
 let BOOK_LABEL = '';
 const K_BOOK = 'drbae_cert_book_v1';
 if(!BOOK) BOOK = load(K_BOOK,'') || '';   // 본사 로그인 세션은 저장해 둔 키를 쓴다
-function certsCol(){ return fdb.collection('certbooks').doc(BOOK).collection('certs'); }
+// 링크(대장)가 아직 없으면 옛 certs 컬렉션을 그대로 쓴다 — 발급 전에도 명단이 보이도록
+function certsCol(){ return BOOK ? fdb.collection('certbooks').doc(BOOK).collection('certs')
+                                 : fdb.collection('certs'); }
+function legacyMode(){ return !BOOK && AUTH_OK; }
 const K_SYNCED = 'drbae_cert_synced_v1';
 let SYNCED = load(K_SYNCED, {});          // 마지막으로 서버와 맞춘 기록 id → updated (삭제·부활 판정용)
 
 /* ═══════════ GitHub 동기화 ═══════════
    records.json 한 파일이 원본. 모든 기기가 이걸 읽고, 토큰이 있는 기기가 쓴다. */
-const BUILD='20260928-211640';   // 배포 스탬프 — 캐시된 옛 버전을 잡아내는 기준
+const BUILD='20260928-212626';   // 배포 스탬프 — 캐시된 옛 버전을 잡아내는 기준
 const SY = { state:'idle', msg:'', at:null };   // idle|pulling|pushing|ok|readonly|error
 
 function b64enc(s){ const b=new TextEncoder().encode(s); let x=''; b.forEach(c=>x+=String.fromCharCode(c)); return btoa(x); }
@@ -576,7 +579,8 @@ const ghUrl = ()=>'https://api.github.com/repos/'+GH.owner+'/'+GH.repo+'/content
 function setSync(state,msg){
   SY.state=state; SY.msg=msg||''; if(state==='ok') SY.at=new Date();
   const el=$('#syncChip'); if(!el) return;
-  const label={idle:'대기',pulling:'불러오는 중…',pushing:'저장 중…',ok:'중앙 저장됨',
+  const label={idle:'대기',pulling:'불러오는 중…',pushing:'저장 중…',
+    ok:(legacyMode()?'중앙 저장됨 · 링크 미발급':'중앙 저장됨'),
     readonly:(KEY_MODE?'조회 전용 링크':'로그인 필요'),error:'저장 실패'}[state]||state;
   const dot={idle:'#9aa3ad',pulling:'#1f6feb',pushing:'#1f6feb',ok:'#0f8f52',readonly:'#b45309',error:'#c0322b'}[state];
   const time = SY.at ? ' · '+SY.at.toTimeString().slice(0,5) : '';
@@ -586,7 +590,7 @@ function setSync(state,msg){
 
 /* 원격(Firestore) → 로컬. 로컬에만 있는 새 기록은 보존해 다음 push 때 올린다. */
 async function pull(quiet){
-  if(!BOOK || (!KEY_MODE && !AUTH_OK)){ setSync('readonly'); renderList(); return false; }
+  if(KEY_MODE ? !BOOK : !AUTH_OK){ setSync('readonly'); renderList(); return false; }
   if(!quiet) setSync('pulling');
   try{
     const snap = await certsCol().get();

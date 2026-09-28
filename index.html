@@ -165,6 +165,7 @@ td.c,th.c{text-align:center}
 <div class="topbar"><div class="topbar-in">
   <div class="brand">닥터배 수료증 <small>Certificate Issuer</small></div>
   <button id="syncChip" title="클릭하면 지금 동기화합니다"><i></i>대기</button>
+  <span id="keyChip" style="display:none;margin-left:8px;background:#e8f0fe;color:#1f6feb;border:1px solid #bcd3fb;border-radius:99px;padding:4px 11px;font-size:12px;font-weight:700"></span>
   <button id="authBanner" style="display:none;margin-left:8px;background:#fff3cd;color:#8a5a00;border:1px solid #f0d58c;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer" title="설정 탭으로 이동">⚠ 로그인 안 됨 — 발급해도 중앙에 저장되지 않습니다. 클릭해서 로그인</button>
   <nav class="tabs">
     <button class="tab on" data-view="issue">발급하기</button>
@@ -353,6 +354,21 @@ td.c,th.c{text-align:center}
         <button class="btn" id="btnPullNow">지금 다시 불러오기</button>
         <button class="btn" id="btnPushNow">지금 저장하기</button>
       </div>
+
+      <div id="keyPanel" style="display:none;border-top:1px solid var(--line);margin-top:18px;padding-top:16px">
+        <label style="display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:5px">
+          로그인 없이 쓰는 링크 (직원·포장 PC용)</label>
+        <p style="margin:0 0 10px;color:var(--muted);font-size:12px">
+          이 링크를 아는 사람은 <b>로그인 없이 명단을 보고 수료증을 발급</b>할 수 있습니다.
+          외부로 나가면 명단 열람·삭제도 가능하니, 새어 나갔다 싶으면 <b>링크 교체</b>를 누르세요.
+          옛 링크는 즉시 막히고 기록은 새 링크로 그대로 옮겨집니다.
+        </p>
+        <div id="keyList" style="margin-bottom:10px"></div>
+        <div class="actions" style="margin-top:0">
+          <button class="btn primary" id="btnIssueKey">링크 발급</button>
+          <button class="btn" id="btnRotateKey">링크 교체 (옛 링크 차단)</button>
+        </div>
+      </div>
       <div style="margin-top:12px;font-size:11px;color:var(--muted)">
         로그인하지 않은 상태에서 발급하면 <b>이 브라우저에만 임시 저장</b>되고, 같은 브라우저에서 로그인하는 순간 자동으로 올라갑니다.
         (예전에 토큰 없이 발급한 기록도 그 브라우저에서 로그인하면 그대로 올라갑니다.)
@@ -530,12 +546,22 @@ const OWNER_EMAILS = ['baewongyu@gmail.com'];
 firebase.initializeApp(FB_CONFIG);
 const fdb = firebase.firestore(), fauth = firebase.auth();
 let AUTH_OK = false, AUTH_EMAIL = '';
+/* 링크 키 모드 — ?k=긴키 로 들어오면 로그인 없이 동작한다.
+   규칙이 경로의 key 를 검사하므로 데이터는 certbooks/{key}/certs 에 있다. */
+const URL_KEY = (new URLSearchParams(location.search).get('k') || '').trim();
+let BOOK = URL_KEY;                    // 현재 쓰는 발급대장 키
+let KEY_MODE = !!URL_KEY;              // true = 링크로 들어온 무로그인 세션
+let CAN_WRITE = false;                 // 이 세션이 저장까지 할 수 있나
+let BOOK_LABEL = '';
+const K_BOOK = 'drbae_cert_book_v1';
+if(!BOOK) BOOK = load(K_BOOK,'') || '';   // 본사 로그인 세션은 저장해 둔 키를 쓴다
+function certsCol(){ return fdb.collection('certbooks').doc(BOOK).collection('certs'); }
 const K_SYNCED = 'drbae_cert_synced_v1';
 let SYNCED = load(K_SYNCED, {});          // 마지막으로 서버와 맞춘 기록 id → updated (삭제·부활 판정용)
 
 /* ═══════════ GitHub 동기화 ═══════════
    records.json 한 파일이 원본. 모든 기기가 이걸 읽고, 토큰이 있는 기기가 쓴다. */
-const BUILD='20260913-201500';   // 배포 스탬프 — 캐시된 옛 버전을 잡아내는 기준
+const BUILD='20260928-211640';   // 배포 스탬프 — 캐시된 옛 버전을 잡아내는 기준
 const SY = { state:'idle', msg:'', at:null };   // idle|pulling|pushing|ok|readonly|error
 
 function b64enc(s){ const b=new TextEncoder().encode(s); let x=''; b.forEach(c=>x+=String.fromCharCode(c)); return btoa(x); }
@@ -550,7 +576,8 @@ const ghUrl = ()=>'https://api.github.com/repos/'+GH.owner+'/'+GH.repo+'/content
 function setSync(state,msg){
   SY.state=state; SY.msg=msg||''; if(state==='ok') SY.at=new Date();
   const el=$('#syncChip'); if(!el) return;
-  const label={idle:'대기',pulling:'불러오는 중…',pushing:'저장 중…',ok:'중앙 저장됨',readonly:'로그인 필요',error:'저장 실패'}[state]||state;
+  const label={idle:'대기',pulling:'불러오는 중…',pushing:'저장 중…',ok:'중앙 저장됨',
+    readonly:(KEY_MODE?'조회 전용 링크':'로그인 필요'),error:'저장 실패'}[state]||state;
   const dot={idle:'#9aa3ad',pulling:'#1f6feb',pushing:'#1f6feb',ok:'#0f8f52',readonly:'#b45309',error:'#c0322b'}[state];
   const time = SY.at ? ' · '+SY.at.toTimeString().slice(0,5) : '';
   el.innerHTML='<i style="background:'+dot+'"></i>'+label+(state==='ok'?time:'');
@@ -559,10 +586,10 @@ function setSync(state,msg){
 
 /* 원격(Firestore) → 로컬. 로컬에만 있는 새 기록은 보존해 다음 push 때 올린다. */
 async function pull(quiet){
-  if(!AUTH_OK){ setSync('readonly'); renderList(); return false; }
+  if(!BOOK || (!KEY_MODE && !AUTH_OK)){ setSync('readonly'); renderList(); return false; }
   if(!quiet) setSync('pulling');
   try{
-    const snap = await fdb.collection('certs').get();
+    const snap = await certsCol().get();
     const remote = snap.docs.map(d=>Object.assign({id:d.id}, d.data()));
     const remoteIds = new Set(remote.map(r=>r.id));
     // 다른 기기에서 지운 기록: 예전에 동기화됐던(SYNCED) 기록이 서버에 없으면 이 기기에서도 지운다
@@ -598,12 +625,12 @@ function merge(remote, local){
 let pushT=null, pushPending=false;
 function queuePush(){
   save(K_REC,RECORDS);
-  if(!AUTH_OK){ setSync('readonly'); pushPending=true; return; }
+  if(!CAN_WRITE){ setSync('readonly'); pushPending=true; return; }
   pushPending=true; clearTimeout(pushT); pushT=setTimeout(pushNow,1200);
 }
 
 async function pushNow(){
-  if(!AUTH_OK){ setSync('readonly'); return false; }
+  if(!CAN_WRITE){ setSync('readonly'); return false; }
   setSync('pushing');
   try{
     const ops=[];
@@ -613,10 +640,10 @@ async function pushNow(){
     DELETED.forEach(d=>{ if(!ids.has(d.id) && !ops.some(o=>o.t==='del'&&o.id===d.id)) ops.push({t:'del', id:d.id}); });
     for(let k=0;k<ops.length;k+=400){
       const b=fdb.batch();
-      ops.slice(k,k+400).forEach(o=>{ if(o.t==='set'){ const {id,...data}=o.r; b.set(fdb.collection('certs').doc(id), data); } else b.delete(fdb.collection('certs').doc(o.id)); });
+      ops.slice(k,k+400).forEach(o=>{ if(o.t==='set'){ const {id,...data}=o.r; b.set(certsCol().doc(id), data); } else b.delete(certsCol().doc(o.id)); });
       await b.commit();
     }
-    if(ops.length) await fdb.collection('meta').doc('certs').set({updated:new Date().toISOString(), count:RECORDS.length, by:AUTH_EMAIL}, {merge:true});
+    if(ops.length && AUTH_OK) await fdb.collection('meta').doc('certs').set({updated:new Date().toISOString(), count:RECORDS.length, by:AUTH_EMAIL}, {merge:true});
     const sy={}; RECORDS.forEach(r=>sy[r.id]=r.updated||''); SYNCED=sy; save(K_SYNCED,SYNCED);
     DELETED=[]; save(K_DEL,DELETED);
     pushPending=false;
@@ -629,14 +656,130 @@ async function pushNow(){
   }
 }
 
-function setAuthUI(){
-  const st=$('#tokState'); if(st) st.textContent = AUTH_OK ? ('로그인됨 — '+AUTH_EMAIL+' (이 기기에서 저장 가능)') : '로그인 안 됨 — 이 기기는 읽기 전용 (발급하면 이 브라우저에만 임시 저장)';
-  const li=$('#btnLogin'), lr=$('#btnLoginRedirect'), lo=$('#btnLogout'); if(li) li.style.display=AUTH_OK?'none':''; if(lr) lr.style.display=AUTH_OK?'none':''; if(lo) lo.style.display=AUTH_OK?'':'none';
-  const bn=$('#authBanner'); if(bn) bn.style.display=AUTH_OK?'none':'';
+/* 본사 로그인 세션이 쓸 대장 키를 찾는다. 없으면 아직 발급 전. */
+async function ownerResolveBook(){
+  if(BOOK){
+    const d=await fdb.collection('certbooks').doc(BOOK).get().catch(()=>null);
+    if(d && d.exists && d.data().active===true){ BOOK_LABEL=d.data().label||''; return BOOK; }
+  }
+  const snap=await fdb.collection('certbooks').where('active','==',true).limit(1).get().catch(()=>null);
+  if(snap && !snap.empty){ BOOK=snap.docs[0].id; BOOK_LABEL=snap.docs[0].data().label||''; save(K_BOOK,BOOK); return BOOK; }
+  BOOK=''; return '';
 }
+function newKey(){
+  const a=new Uint8Array(24); crypto.getRandomValues(a);
+  return btoa(String.fromCharCode(...a)).replace(/[+/=]/g,'').slice(0,32);
+}
+function keyLink(k){ return location.origin+location.pathname+'?k='+k; }
+
+/* 첫 발급: 키를 만들고, 옛 certs 컬렉션에 있던 기록을 새 대장으로 옮긴다. */
+async function issueFirstKey(label){
+  const k=newKey();
+  await fdb.collection('certbooks').doc(k).set({
+    active:true, canWrite:true, label:label||'발급용', createdAt:new Date().toISOString(), by:AUTH_EMAIL });
+  // 기존 certs → certbooks/{k}/certs 로 이관 (한 번만)
+  let moved=0;
+  const old=await fdb.collection('certs').get().catch(()=>null);
+  if(old && !old.empty){
+    const docs=old.docs;
+    for(let i=0;i<docs.length;i+=400){
+      const b=fdb.batch();
+      docs.slice(i,i+400).forEach(d=>b.set(fdb.collection('certbooks').doc(k).collection('certs').doc(d.id), d.data()));
+      await b.commit(); moved+=Math.min(400,docs.length-i);
+    }
+  }
+  BOOK=k; save(K_BOOK,k); BOOK_LABEL=label||'발급용';
+  await refreshKeyList(); await pull();
+  return {key:k, moved:moved};
+}
+
+/* 교체: 새 키로 데이터를 복사하고 옛 키를 잠근다. */
+async function rotateKey(){
+  const oldK=BOOK; if(!oldK) return null;
+  const k=newKey();
+  const src=await fdb.collection('certbooks').doc(oldK).collection('certs').get();
+  await fdb.collection('certbooks').doc(k).set({
+    active:true, canWrite:true, label:(BOOK_LABEL||'발급용'), createdAt:new Date().toISOString(), by:AUTH_EMAIL, rotatedFrom:oldK });
+  const docs=src.docs;
+  for(let i=0;i<docs.length;i+=400){
+    const b=fdb.batch();
+    docs.slice(i,i+400).forEach(d=>b.set(fdb.collection('certbooks').doc(k).collection('certs').doc(d.id), d.data()));
+    await b.commit();
+  }
+  await fdb.collection('certbooks').doc(oldK).update({active:false, revokedAt:new Date().toISOString()});
+  BOOK=k; save(K_BOOK,k);
+  await refreshKeyList(); await pull();
+  return {key:k, copied:docs.length};
+}
+
+async function refreshKeyList(){
+  const box=$('#keyList'); if(!box || !AUTH_OK) return;
+  try{
+    const snap=await fdb.collection('certbooks').orderBy('createdAt','desc').limit(20).get();
+    if(snap.empty){ box.innerHTML='<div style="color:var(--muted);font-size:12px">아직 발급된 링크 키가 없습니다.</div>'; return; }
+    box.innerHTML=snap.docs.map(d=>{
+      const b=d.data(), on=b.active===true;
+      return '<div style="border:1px solid var(--line);border-radius:7px;padding:9px 11px;margin-bottom:7px;font-size:12px'+(on?'':';opacity:.5')+'">'
+        +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">'
+        +'<b>'+esc(b.label||'(이름 없음)')+'</b>'
+        +'<span class="badge '+(on?'issued':'record')+'">'+(on?(b.canWrite?'사용 중 · 발급 가능':'사용 중 · 조회 전용'):'회수됨')+'</span>'
+        +(d.id===BOOK?'<span style="color:var(--accent);font-weight:700">현재</span>':'')+'</div>'
+        +(on?'<input readonly value="'+esc(keyLink(d.id))+'" style="width:100%;font-size:11px;padding:5px 7px;border:1px solid var(--line2);border-radius:5px" onclick="this.select()">':'')
+        +'<div style="color:var(--muted);margin-top:4px">발급 '+esc((b.createdAt||'').slice(0,10))+(b.lastSeen?' · 최근 접속 '+esc(b.lastSeen.slice(0,16).replace('T',' ')):' · 접속 기록 없음')+'</div>'
+        +'</div>';
+    }).join('');
+  }catch(e){ box.innerHTML='<div style="color:var(--danger);font-size:12px">키 목록을 불러오지 못했습니다: '+esc(e.message)+'</div>'; }
+}
+
+function setAuthUI(){
+  const st=$('#tokState'), li=$('#btnLogin'), lr=$('#btnLoginRedirect'), lo=$('#btnLogout');
+  const bn=$('#authBanner'), chip=$('#keyChip'), kp=$('#keyPanel');
+
+  if(KEY_MODE){                                   // 링크로 들어온 무로그인 세션
+    if(st) st.textContent = '링크로 접속 중'+(BOOK_LABEL?' — '+BOOK_LABEL:'')+(CAN_WRITE?' (발급 가능)':' (조회 전용)');
+    [li,lr,lo].forEach(b=>{ if(b) b.style.display='none'; });
+    if(bn) bn.style.display='none';
+    if(kp) kp.style.display='none';
+    if(chip){ chip.style.display=''; chip.textContent = CAN_WRITE?'🔗 링크 접속 · 발급 가능':'🔗 링크 접속 · 조회 전용'; }
+    return;
+  }
+
+  if(chip) chip.style.display='none';
+  if(st) st.textContent = AUTH_OK ? ('로그인됨 — '+AUTH_EMAIL+' (이 기기에서 저장 가능)') : '로그인 안 됨 — 이 기기는 읽기 전용 (발급하면 이 브라우저에만 임시 저장)';
+  if(li) li.style.display=AUTH_OK?'none':''; if(lr) lr.style.display=AUTH_OK?'none':''; if(lo) lo.style.display=AUTH_OK?'':'none';
+  if(bn) bn.style.display=AUTH_OK?'none':'';
+  if(kp) kp.style.display=AUTH_OK?'':'none';
+}
+/* 링크 키로 들어온 세션: 대장 문서를 읽어 유효성·쓰기권한을 확인하고 바로 시작한다. */
+async function bootKeyMode(){
+  try{
+    const d = await fdb.collection('certbooks').doc(BOOK).get();
+    if(!d.exists || d.data().active !== true){
+      KEY_MODE=false; CAN_WRITE=false;
+      setSync('error','이 링크는 만료되었거나 잘못되었습니다. 본사에 재발급을 요청하세요.');
+      renderList(); return;
+    }
+    const b=d.data();
+    CAN_WRITE = b.canWrite === true;
+    BOOK_LABEL = b.label || '';
+    setAuthUI();
+    await pull();
+    d.ref.update({lastSeen:new Date().toISOString()}).catch(()=>{});
+  }catch(e){
+    CAN_WRITE=false;
+    setSync('error','링크 확인 실패: '+e.message);
+    renderList();
+  }
+}
+
 fauth.onAuthStateChanged(u=>{
-  if(u && OWNER_EMAILS.indexOf((u.email||'').toLowerCase())>=0){ AUTH_OK=true; AUTH_EMAIL=u.email; setAuthUI(); pull(); }
-  else { if(u){ toast('이 계정('+u.email+')은 본사 계정이 아닙니다'); fauth.signOut(); } AUTH_OK=false; AUTH_EMAIL=''; setAuthUI(); setSync('readonly'); }
+  if(KEY_MODE) return;                       // 링크 세션은 로그인 상태와 무관
+  if(u && OWNER_EMAILS.indexOf((u.email||'').toLowerCase())>=0){
+    AUTH_OK=true; AUTH_EMAIL=u.email; CAN_WRITE=true; setAuthUI();
+    ownerResolveBook().then(()=>{ pull(); refreshKeyList(); });
+  }
+  else { if(u){ toast('이 계정('+u.email+')은 본사 계정이 아닙니다'); fauth.signOut(); }
+    AUTH_OK=false; AUTH_EMAIL=''; CAN_WRITE=false; setAuthUI(); setSync('readonly'); }
 });
 /* ───────── 유틸 ───────── */
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
@@ -929,7 +1072,11 @@ function validate(r){
   if(!r.date){ toast('수료 일자를 선택하세요'); $('#f-date').focus(); return false; }
   return true;
 }
-function authGuard(){ if(AUTH_OK) return true; return confirm('로그인되지 않았습니다.\n\n이 기록은 이 브라우저에만 임시 저장되고, 이 브라우저에서 Google 로그인하면 중앙 저장소로 올라갑니다.\n지금 저장을 계속할까요? (취소 후 설정 탭에서 로그인 권장)'); }
+function authGuard(){
+  if(CAN_WRITE) return true;
+  if(KEY_MODE) return confirm('이 링크는 조회 전용입니다.\n\n발급하면 이 브라우저에만 임시 저장되고 중앙에는 올라가지 않습니다.\n계속할까요? (본사에 발급 권한 링크를 요청하세요)');
+  return confirm('로그인되지 않았습니다.\n\n이 기록은 이 브라우저에만 임시 저장되고, Google 로그인하면 중앙 저장소로 올라갑니다.\n지금 저장을 계속할까요?');
+}
 $('#btnSavePrint').addEventListener('click',()=>{
   const r=formData(); if(!validate(r)) return; if(!authGuard()) return;
   upsert(r); printRecords([r]);
@@ -1073,8 +1220,31 @@ $('#btnLogin').addEventListener('click',()=>{
 });
 $('#btnLoginRedirect').addEventListener('click',()=>{ fauth.signInWithRedirect(googleProvider()); });
 $('#btnLogout').addEventListener('click',()=>fauth.signOut().then(()=>{ toast('로그아웃했습니다'); }));
-$('#btnPullNow').addEventListener('click',()=>{ if(!AUTH_OK){ toast('먼저 Google 로그인하세요'); return; } pull(); });
-$('#btnPushNow').addEventListener('click',()=>{ if(!AUTH_OK){ toast('먼저 Google 로그인하세요'); return; } pushNow(); });
+$('#btnPullNow').addEventListener('click',()=>{ if(!BOOK){ toast('먼저 링크를 발급하세요'); return; } pull(); });
+$('#btnPushNow').addEventListener('click',()=>{ if(!CAN_WRITE){ toast('이 세션은 저장 권한이 없습니다'); return; } pushNow(); });
+
+$('#btnIssueKey').addEventListener('click',async()=>{
+  if(!AUTH_OK){ toast('본사 로그인이 필요합니다'); return; }
+  if(BOOK && !confirm('이미 사용 중인 링크가 있습니다.\n새로 발급하면 기록이 옮겨가지 않은 빈 대장이 만들어집니다.\n\n기존 링크를 바꾸려면 "링크 교체"를 쓰세요. 그래도 새로 발급할까요?')) return;
+  const label=prompt('이 링크의 용도를 적어주세요 (예: 포장 PC, 직원용)','포장 PC');
+  if(label===null) return;
+  try{
+    toast('발급 중…');
+    const r=await issueFirstKey(label);
+    alert('링크를 발급했습니다.'+(r.moved?'\n기존 기록 '+r.moved+'건을 새 대장으로 옮겼습니다.':'')+'\n\n'+keyLink(r.key));
+  }catch(e){ alert('발급 실패: '+e.message); }
+});
+
+$('#btnRotateKey').addEventListener('click',async()=>{
+  if(!AUTH_OK){ toast('본사 로그인이 필요합니다'); return; }
+  if(!BOOK){ toast('아직 발급된 링크가 없습니다'); return; }
+  if(!confirm('링크를 교체합니다.\n\n· 지금 링크는 즉시 막힙니다 (포장 PC도 새 링크로 바꿔야 합니다)\n· 기록은 새 링크로 전부 복사됩니다\n\n진행할까요?')) return;
+  try{
+    toast('교체 중…');
+    const r=await rotateKey();
+    alert('링크를 교체했습니다. 기록 '+r.copied+'건 이전 완료.\n\n새 링크:\n'+keyLink(r.key));
+  }catch(e){ alert('교체 실패: '+e.message); }
+});
 
 // 단축키
 document.addEventListener('keydown',e=>{
@@ -1089,10 +1259,15 @@ applyZoom();
 fitZoom();
 renderList();                       // 캐시부터 즉시 표시
 setAuthUI();
-setSync('readonly');                // 로그인되면 onAuthStateChanged 가 pull() 한다
-fauth.getRedirectResult().catch(e=>{ if(e&&e.code!=='auth/no-auth-event') toast('로그인 실패: '+(e.message||e)); });
+setSync('readonly');
+if(KEY_MODE){
+  bootKeyMode();                    // 링크 세션: 로그인 없이 바로 시작
+}else{
+  // 본사 세션: onAuthStateChanged 가 로그인 확인 후 pull() 한다
+  fauth.getRedirectResult().catch(e=>{ if(e&&e.code!=='auth/no-auth-event') toast('로그인 실패: '+(e.message||e)); });
+}
 checkUpdate();                      // 캐시된 옛 버전이면 한 번 새로고침
-window.addEventListener('online', ()=>{ if(AUTH_OK) pull(true); });
+window.addEventListener('online', ()=>{ if(KEY_MODE||AUTH_OK) pull(true); });
 </script>
 </body>
 </html>
